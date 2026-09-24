@@ -1,0 +1,26 @@
+{
+  "data": {
+    "train_ticker": "BTC-USD",
+    "backtest_ticker": "ETH-USD",
+    "interval": "15m",
+    "days_to_load": 50
+  },
+  "preprocessing": {
+    "n_steps": 20,
+    "k_steps": 4,
+    "profit_threshold": 0.05
+  },
+  "model": {
+    "epochs": 50,
+    "batch_size": 32
+  },
+  "backtesting": {
+    "initial_capital": 10000.0,
+    "transaction_cost": 0.001,
+    "buy_threshold": 0.6,
+    "sell_threshold": 0.4,
+    "stop_loss_pct": 0.01,
+    "trailing_stop_pct": 0.02,
+    "hold_penalty": -0.01
+  }
+}
