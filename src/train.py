@@ -74,24 +74,33 @@ def train_model_with_callback(queue):
         queue.put({'type': 'train_finished'})
         return
 
-    # --- Class Weight Calculation (Only on actual signals) ---
-    # We only compute class weights where sample_weights == 1
-    y_integers = np.argmax(y, axis=1)
+    # --- Filter Data (Dense Batches for Generalization) ---
+    # To prevent 98% of the batch being empty (sample_weight=0), which causes extremely noisy gradients,
+    # we filter the dataset to ONLY contain actual trading signals before training.
     valid_indices = np.where(sample_weights == 1.0)[0]
     
-    if len(valid_indices) > 0:
-        valid_y = y_integers[valid_indices]
-        weights = class_weight.compute_class_weight('balanced', classes=np.unique(valid_y), y=valid_y)
-        class_weights_dict = dict(enumerate(weights))
-        print(f"Class Weights (on actual signals): Failure (0)={class_weights_dict.get(0, 1.0):.2f}, Success (1)={class_weights_dict.get(1, 1.0):.2f}")
-        
-        # Incorporate class weights into sample_weights directly
-        for i in valid_indices:
-            sample_weights[i] *= class_weights_dict.get(y_integers[i], 1.0)
-    else:
+    if len(valid_indices) == 0:
         print("No valid signals found for training.")
+        queue.put({'type': 'train_finished'})
+        return
+        
+    X_dense = X[valid_indices]
+    y_dense = y[valid_indices]
+    y_integers_dense = np.argmax(y_dense, axis=1)
+    
+    # Compute class weights on the dense targets
+    weights = class_weight.compute_class_weight('balanced', classes=np.unique(y_integers_dense), y=y_integers_dense)
+    class_weights_dict = dict(enumerate(weights))
+    
+    # --- PENALIZE NOT TRADING ---
+    # The user requested to penalize the model if it doesn't trade.
+    # We heavily increase the weight of class 1 (Approve Trade) so the network is biased towards taking trades.
+    class_weights_dict[1] = class_weights_dict.get(1, 1.0) * 2.5
+    
+    print(f"Class Weights (on actual signals): Failure/Hold (0)={class_weights_dict.get(0, 1.0):.2f}, Success/Trade (1)={class_weights_dict.get(1, 1.0):.2f}")
 
-    X_train, X_val, y_train, y_val, sw_train, sw_val = train_test_split(X, y, sample_weights, test_size=0.2, shuffle=False)
+    # Temporal split on dense trades
+    X_train, X_val, y_train, y_val = train_test_split(X_dense, y_dense, test_size=0.2, shuffle=False)
 
     if len(X_train) == 0 or len(X_val) == 0:
         queue.put({'type': 'train_finished'})
@@ -101,19 +110,19 @@ def train_model_with_callback(queue):
 
     # --- Callbacks ---
     ui_callback = UILoggerCallback(queue)
-    early_stopping = EarlyStopping(monitor='val_loss', patience=15, restore_best_weights=True, verbose=1)
+    early_stopping = EarlyStopping(monitor='val_loss', patience=20, restore_best_weights=True, verbose=1)
     model_checkpoint = ModelCheckpoint('best_model.keras', monitor='val_loss', save_best_only=True, verbose=1)
     # Must be after model_checkpoint so the .keras file exists!
     backtest_callback = BacktestOnEpochEnd(queue, frequency=1)
-    reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=5, min_lr=0.00001, verbose=1)
+    reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=8, min_lr=0.00001, verbose=1)
 
-    print("Starting model fitting with Meta-Labeling and sample weights...")
+    print("Starting model fitting on DENSE Meta-Labeling signals...")
     model.fit(
         X_train, y_train,
-        sample_weight=sw_train,
         epochs=EPOCHS,
         batch_size=BATCH_SIZE,
-        validation_data=(X_val, y_val, sw_val),
+        validation_data=(X_val, y_val),
         callbacks=[ui_callback, model_checkpoint, backtest_callback, early_stopping, reduce_lr],
+        class_weight=class_weights_dict,
         verbose=1
     )

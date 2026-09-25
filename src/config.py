@@ -2,8 +2,8 @@ from datetime import datetime, timedelta
 
 # --- Data parameters ---
 TICKER = "BTC-USD"
-INTERVAL = "15m"
-DAYS_TO_LOAD = 180 # Increased to 180 days for more diverse market conditions
+INTERVAL = "1h"
+DAYS_TO_LOAD = 700 # ~2 years of data for better generalization
 
 END_DATE = datetime.now()
 START_DATE = END_DATE - timedelta(days=DAYS_TO_LOAD)
@@ -21,7 +21,7 @@ MAX_HOLDING_PERIOD = 10  # Max 10 candles (2.5 hours) holding period
 
 # --- Model parameters ---
 EPOCHS = 50
-BATCH_SIZE = 32
+BATCH_SIZE = 16
 
 # --- Backtesting parameters ---
 INITIAL_CAPITAL = 10000.0
