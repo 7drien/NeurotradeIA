@@ -31,18 +31,21 @@ def train_model_with_callback(queue):
         queue.put({'type': 'train_finished'})
         return
 
-    print("Preparing raw OHLCV data and indicators for labeling...")
-    # Calculate ATR_label on the original data first
-    data_with_atr_label = _calculate_atr_for_labeling(data.copy())
-
-    feature_cols = ['Open', 'High', 'Low', 'Close', 'Volume']
+    print("Preparing raw OHLCV data and advanced features...")
+    from src.features import add_advanced_features
     
-    # df_processed will contain OHLCV, ATR_label, High, Low. Ensure no duplicate columns.
-    # We need 'High', 'Low', 'Close', 'ATR_label' for labeling, and 'Open', 'High', 'Low', 'Close', 'Volume' for features.
-    # Let's create a comprehensive dataframe for processing.
-    all_needed_cols = list(set(feature_cols + ['ATR_label', 'High', 'Low', 'Close'])) # Use set to avoid duplicates
-    df_processed = data_with_atr_label[all_needed_cols].copy()
-    df_processed.dropna(inplace=True) # Drop NaNs from ATR_label calculation and other features
+    # Calculate ATR_label on the original data first for labeling
+    data = _calculate_atr_for_labeling(data.copy())
+    
+    # Add advanced features
+    data_with_features = add_advanced_features(data.copy())
+
+    feature_cols = ['Open', 'High', 'Low', 'Close', 'Volume', 'Close_FracDiff', 'GK_Vol_14', 'Rolling_VWAP', 'RSI_14']
+    
+    # We need 'High', 'Low', 'Close', 'ATR_label' for labeling, and the features for training
+    all_needed_cols = list(set(feature_cols + ['ATR_label', 'High', 'Low', 'Close']))
+    df_processed = data_with_features[all_needed_cols].copy()
+    df_processed.dropna(inplace=True)
 
     # Now df_processed is aligned and clean
     prices_for_labels = df_processed['Close'].values
@@ -57,7 +60,7 @@ def train_model_with_callback(queue):
     print("Scaler for raw features has been saved.")
     
     # Pass scaled features and the ALIGNED raw data (for labels) to the sequence function
-    X, y = create_sequences_triple_label(
+    X, y, sample_weights = create_sequences_triple_label(
         scaled_features, 
         prices_for_labels, 
         highs_for_labels,
@@ -71,13 +74,24 @@ def train_model_with_callback(queue):
         queue.put({'type': 'train_finished'})
         return
 
-    # --- Class Weight Calculation ---
+    # --- Class Weight Calculation (Only on actual signals) ---
+    # We only compute class weights where sample_weights == 1
     y_integers = np.argmax(y, axis=1)
-    weights = class_weight.compute_class_weight('balanced', classes=np.unique(y_integers), y=y_integers)
-    class_weights_dict = dict(enumerate(weights))
-    print(f"Class Weights: Sell={class_weights_dict.get(0):.2f}, Hold={class_weights_dict.get(1):.2f}, Buy={class_weights_dict.get(2):.2f}")
+    valid_indices = np.where(sample_weights == 1.0)[0]
+    
+    if len(valid_indices) > 0:
+        valid_y = y_integers[valid_indices]
+        weights = class_weight.compute_class_weight('balanced', classes=np.unique(valid_y), y=valid_y)
+        class_weights_dict = dict(enumerate(weights))
+        print(f"Class Weights (on actual signals): Failure (0)={class_weights_dict.get(0, 1.0):.2f}, Success (1)={class_weights_dict.get(1, 1.0):.2f}")
+        
+        # Incorporate class weights into sample_weights directly
+        for i in valid_indices:
+            sample_weights[i] *= class_weights_dict.get(y_integers[i], 1.0)
+    else:
+        print("No valid signals found for training.")
 
-    X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, shuffle=False)
+    X_train, X_val, y_train, y_val, sw_train, sw_val = train_test_split(X, y, sample_weights, test_size=0.2, shuffle=False)
 
     if len(X_train) == 0 or len(X_val) == 0:
         queue.put({'type': 'train_finished'})
@@ -87,18 +101,19 @@ def train_model_with_callback(queue):
 
     # --- Callbacks ---
     ui_callback = UILoggerCallback(queue)
-    backtest_callback = BacktestOnEpochEnd(queue, frequency=5)
     early_stopping = EarlyStopping(monitor='val_loss', patience=15, restore_best_weights=True, verbose=1)
-    model_checkpoint = ModelCheckpoint('best_model.h5', monitor='val_loss', save_best_only=True, verbose=1)
+    model_checkpoint = ModelCheckpoint('best_model.keras', monitor='val_loss', save_best_only=True, verbose=1)
+    # Must be after model_checkpoint so the .keras file exists!
+    backtest_callback = BacktestOnEpochEnd(queue, frequency=1)
     reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=5, min_lr=0.00001, verbose=1)
 
-    print("Starting model fitting with custom opportunity cost loss...")
+    print("Starting model fitting with Meta-Labeling and sample weights...")
     model.fit(
         X_train, y_train,
+        sample_weight=sw_train,
         epochs=EPOCHS,
         batch_size=BATCH_SIZE,
-        validation_data=(X_val, y_val),
-        callbacks=[ui_callback, backtest_callback, early_stopping, model_checkpoint, reduce_lr],
-        class_weight=class_weights_dict,
+        validation_data=(X_val, y_val, sw_val),
+        callbacks=[ui_callback, model_checkpoint, backtest_callback, early_stopping, reduce_lr],
         verbose=1
     )

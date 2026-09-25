@@ -11,7 +11,7 @@ END_DATE_STR = END_DATE.strftime('%Y-%m-%d')
 START_DATE_STR = START_DATE.strftime('%Y-%m-%d')
 
 # --- Preprocessing parameters ---
-N_STEPS = 50
+N_STEPS = 100
 K_STEPS = 4 # Prediction horizon (e.g., 4 * 15min = 1 hour ahead)
 
 # Triple Barrier Method parameters

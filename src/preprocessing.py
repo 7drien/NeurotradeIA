@@ -3,56 +3,89 @@ import pandas as pd # Keep pandas for pd.isna check
 from tensorflow.keras.utils import to_categorical
 from src.config import N_STEPS, K_STEPS, PROFIT_TAKE_FACTOR, STOP_LOSS_FACTOR, MAX_HOLDING_PERIOD
 
+def compute_rsi(series, period=14):
+    delta = series.diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+    rs = gain / loss
+    return 100 - (100 / (1 + rs))
+
 def create_sequences_triple_label(features: np.ndarray, prices: np.ndarray, highs: np.ndarray, lows: np.ndarray, atrs_for_labeling: np.ndarray, n_steps: int, k_steps: int):
     """
-    Creates sequences with Triple Barrier Method labels.
-    - features: The NORMALIZED input data for the model (X).
-    - prices: The RAW Close price data to generate labels (y).
-    - highs: The RAW High price data for barriers.
-    - lows: The RAW Low price data for barriers.
-    - atrs_for_labeling: The RAW ATR data specifically for barrier calculation.
-    All input arrays (features, prices, highs, lows, atrs_for_labeling) must be aligned.
+    Creates sequences with Meta-Labeling.
+    Primary Model: RSI + Z-Score Mean Reversion.
+    Secondary Model (ML): Predicts 1 if Primary Model is correct (hits TP), 0 otherwise.
     """
-    X, y = [], []
+    X, y, sample_weights = [], [], []
     
-    for i in range(len(features) - n_steps - k_steps + 1):
+    # Calculate primary signals (RSI + Z-Score)
+    prices_series = pd.Series(prices)
+    z_score = (prices_series - prices_series.rolling(100).mean()) / prices_series.rolling(100).std()
+    rsi = compute_rsi(prices_series, 14)
+    
+    # Vectorized signal generation (2 for LONG, 0 for SHORT, 1 for HOLD)
+    # Trigger when both conditions are met (Mean Reversion setup)
+    cond_long = (z_score < -2) & (rsi < 30)
+    cond_short = (z_score > 2) & (rsi > 70)
+    
+    # Only trigger on the initial crossover of the condition
+    cross_long = cond_long & ~cond_long.shift(1).fillna(False)
+    cross_short = cond_short & ~cond_short.shift(1).fillna(False)
+    primary_signals = np.where(cross_long, 2, np.where(cross_short, 0, 1))
+    
+    for i in range(100, len(features) - n_steps - k_steps + 1):
         # Input sequence of features
-        X.append(features[i:(i + n_steps)])
+        seq = features[i:(i + n_steps)].copy()
+        
+        # SEQUENCE-WISE NORMALIZATION (Z-score per sequence)
+        seq_mean = np.mean(seq, axis=0)
+        seq_std = np.std(seq, axis=0) + 1e-8
+        seq = (seq - seq_mean) / seq_std
+        X.append(seq)
         
         current_price = prices[i + n_steps - 1]
         current_atr = atrs_for_labeling[i + n_steps - 1]
+        primary_signal = primary_signals[i + n_steps - 1]
         
-        if pd.isna(current_atr): 
-            y.append(1) # Default to Hold if ATR is missing
+        if pd.isna(current_atr) or pd.isna(primary_signal) or primary_signal == 1: 
+            y.append(0) # Default to failure/ignore so index mapping is preserved
+            sample_weights.append(0.0) # IGNORE IN TRAINING
             continue
 
-        # Define barriers
-        profit_barrier = current_price + (PROFIT_TAKE_FACTOR * current_atr)
-        loss_barrier = current_price - (STOP_LOSS_FACTOR * current_atr)
+        profit_barrier = current_price + (PROFIT_TAKE_FACTOR * current_atr) if primary_signal == 2 else current_price - (PROFIT_TAKE_FACTOR * current_atr)
+        loss_barrier = current_price - (STOP_LOSS_FACTOR * current_atr) if primary_signal == 2 else current_price + (STOP_LOSS_FACTOR * current_atr)
         
-        # Look into the future (up to MAX_HOLDING_PERIOD)
         future_slice_start = i + n_steps
         future_slice_end = min(i + n_steps + MAX_HOLDING_PERIOD, len(prices))
         
         if future_slice_start >= future_slice_end:
-            y.append(1)
+            y.append(0)
+            sample_weights.append(1.0)
             continue
 
         future_highs_slice = highs[future_slice_start : future_slice_end]
         future_lows_slice = lows[future_slice_start : future_slice_end]
 
-        label = 1 # Default to Hold
+        meta_label = 0 # Default to failure
         
-        # Check for profit or loss barrier hit
-        # This loop needs to iterate over each element of the slice
         for j in range(len(future_highs_slice)):
-            if future_highs_slice[j] >= profit_barrier:
-                label = 2 # Buy signal (hit profit barrier first)
-                break
-            elif future_lows_slice[j] <= loss_barrier:
-                label = 0 # Sell signal (hit loss barrier first)
-                break
+            if primary_signal == 2: # LONG
+                if future_highs_slice[j] >= profit_barrier:
+                    meta_label = 1 # Success
+                    break
+                elif future_lows_slice[j] <= loss_barrier:
+                    meta_label = 0 # Failure
+                    break
+            else: # SHORT
+                if future_lows_slice[j] <= profit_barrier:
+                    meta_label = 1 # Success
+                    break
+                elif future_highs_slice[j] >= loss_barrier:
+                    meta_label = 0 # Failure
+                    break
         
-        y.append(label)
+        y.append(meta_label)
+        sample_weights.append(1.0) # TRAIN ON THIS
             
-    return np.array(X), to_categorical(np.array(y), num_classes=3)
+    # Binary classification now!
+    return np.array(X), to_categorical(np.array(y), num_classes=2), np.array(sample_weights)
