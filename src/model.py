@@ -13,7 +13,7 @@ def opportunity_cost_loss(y_true, y_pred):
     return tf.keras.losses.categorical_crossentropy(y_true, y_pred)
 
 
-def create_lstm_model(input_shape):
+def create_lstm_model(input_shape, lstm_units=64):
     """
     Creates a leaner GRU/LSTM model compiled for binary classification (Meta-Labeling).
     Reduced regularization to allow the model to dynamically learn the patterns without underfitting.
@@ -23,15 +23,15 @@ def create_lstm_model(input_shape):
         GaussianNoise(0.005, input_shape=input_shape),
         
         # Sequence modeling with LSTM, light regularization to avoid being static
-        LSTM(64, return_sequences=True, kernel_regularizer=l2(1e-4)),
+        LSTM(lstm_units, return_sequences=True, kernel_regularizer=l2(1e-4)),
         BatchNormalization(),
         Dropout(0.2),
         
-        LSTM(32, return_sequences=False, kernel_regularizer=l2(1e-4)),
+        LSTM(lstm_units // 2, return_sequences=False, kernel_regularizer=l2(1e-4)),
         BatchNormalization(),
         Dropout(0.2),
 
-        Dense(32, activation='relu', kernel_regularizer=l2(1e-4)),
+        Dense(lstm_units // 2, activation='relu', kernel_regularizer=l2(1e-4)),
         Dropout(0.1),
         Dense(2, activation='softmax')
     ])

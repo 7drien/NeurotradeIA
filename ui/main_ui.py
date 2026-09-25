@@ -27,23 +27,50 @@ class App(tk.Tk):
         style.configure("Header.TLabel", font=("Segoe UI", 16, "bold"), foreground="#00d2ff")
         
         self.configure(bg="#1e1e1e")
+        
+        # Bind the window close event directly in the constructor
+        self.protocol("WM_DELETE_WINDOW", self.on_closing)
 
         # --- UI Layout ---
         main_frame = ttk.Frame(self, padding="20")
         main_frame.pack(fill=tk.BOTH, expand=True)
         
-        # Top frame for controls and metrics
-        header_frame = ttk.Frame(main_frame)
+        # Split into left panel (settings) and right panel (plot & metrics)
+        left_panel = ttk.Frame(main_frame, width=300)
+        left_panel.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 20))
+        
+        right_panel = ttk.Frame(main_frame)
+        right_panel.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+        
+        # --- Settings Panel ---
+        settings_lbl = ttk.Label(left_panel, text="Configuration", style="Header.TLabel")
+        settings_lbl.pack(pady=(0, 20), anchor=tk.W)
+        
+        # Variables
+        self.epochs_var = tk.StringVar(value="50")
+        self.batch_size_var = tk.StringVar(value="16")
+        self.n_steps_var = tk.StringVar(value="100")
+        self.lstm_units_var = tk.StringVar(value="64")
+        self.days_var = tk.StringVar(value="700")
+        
+        self.create_input_field(left_panel, "Epochs:", self.epochs_var)
+        self.create_input_field(left_panel, "Batch Size:", self.batch_size_var)
+        self.create_input_field(left_panel, "Sequence Length (Candles):", self.n_steps_var)
+        self.create_input_field(left_panel, "LSTM Units:", self.lstm_units_var)
+        self.create_input_field(left_panel, "Days to Load:", self.days_var)
+        
+        self.train_button = ttk.Button(left_panel, text="▶ START TRAINING", command=self.run_training)
+        self.train_button.pack(fill=tk.X, pady=20)
+        
+        # --- Top frame for metrics (Right Panel) ---
+        header_frame = ttk.Frame(right_panel)
         header_frame.pack(fill=tk.X, pady=(0, 20))
 
-        title_lbl = ttk.Label(header_frame, text="Neural Network Meta-Labeling", style="Header.TLabel")
+        title_lbl = ttk.Label(header_frame, text="Neural Network Meta-Labeling Dashboard", style="Header.TLabel")
         title_lbl.pack(side=tk.LEFT)
-
-        self.train_button = ttk.Button(header_frame, text="▶ START TRAINING (EPOCH-BY-EPOCH)", command=self.run_training)
-        self.train_button.pack(side=tk.RIGHT, padx=10)
         
         # Metrics bar
-        metrics_frame = ttk.Frame(main_frame)
+        metrics_frame = ttk.Frame(right_panel)
         metrics_frame.pack(fill=tk.X, pady=10)
         
         self.epoch_label = ttk.Label(metrics_frame, text="Epoch: N/A", font=("Segoe UI", 14, "bold"))
@@ -58,7 +85,7 @@ class App(tk.Tk):
         self.progress = ttk.Progressbar(metrics_frame, mode='indeterminate', length=200)
 
         # Main plot area for backtest results
-        plot_frame = tk.Frame(main_frame, bg="#1e1e1e")
+        plot_frame = tk.Frame(right_panel, bg="#1e1e1e")
         plot_frame.pack(fill=tk.BOTH, expand=True)
 
         # --- Matplotlib Figure for Backtesting ---
@@ -73,12 +100,36 @@ class App(tk.Tk):
         # Start the queue checker
         self.after(100, self.check_queue)
 
+    def create_input_field(self, parent, label_text, var):
+        frame = ttk.Frame(parent)
+        frame.pack(fill=tk.X, pady=5)
+        lbl = ttk.Label(frame, text=label_text, font=("Segoe UI", 10))
+        lbl.pack(side=tk.TOP, anchor=tk.W)
+        entry = ttk.Entry(frame, textvariable=var, font=("Segoe UI", 10))
+        entry.pack(side=tk.TOP, fill=tk.X)
+
     def run_training(self):
         """Runs the training process in a separate thread."""
         self.train_button.config(state="disabled")
         self.progress.pack(side=tk.RIGHT, padx=20)
         self.progress.start(10)
         print("Starting training...")
+        
+        # Build params dict
+        try:
+            params = {
+                'epochs': int(self.epochs_var.get()),
+                'batch_size': int(self.batch_size_var.get()),
+                'n_steps': int(self.n_steps_var.get()),
+                'lstm_units': int(self.lstm_units_var.get()),
+                'days_to_load': int(self.days_var.get())
+            }
+        except ValueError:
+            print("Invalid input parameters. Please enter integers only.")
+            self.progress.stop()
+            self.progress.pack_forget()
+            self.train_button.config(state="normal")
+            return
         
         # Clear previous plots and labels
         self.ax1.clear()
@@ -88,8 +139,9 @@ class App(tk.Tk):
         self.winrate_label.config(text="Win Rate: 0.00%")
         self.canvas.draw()
 
-        # The training function now needs to accept the queue
-        thread = threading.Thread(target=train_model_with_callback, args=(ui_queue,))
+        # The training function now needs to accept the queue and params
+        thread = threading.Thread(target=train_model_with_callback, args=(ui_queue, params))
+        thread.daemon = True # Ensure thread dies when main window closes
         thread.start()
 
     def check_queue(self):
@@ -137,6 +189,12 @@ class App(tk.Tk):
             pass
         finally:
             self.after(100, self.check_queue)
+            
+    def on_closing(self):
+        import os
+        print("Closing application forcefully...")
+        self.destroy()
+        os._exit(0)
 
 if __name__ == "__main__":
     app = App()
