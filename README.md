@@ -1,5 +1,7 @@
 # NeurotradeIA: Deep Learning Model for Trading
 
+> **⚠️ Disclaimer**: This project is intended purely for visualization, educational purposes, and experimentation. It does not constitute financial advice, and the models or strategies developed here should not be used for live trading with real capital.
+
 NeurotradeIA is a comprehensive pipeline designed to train deep learning models that predict the success of trading signals using **Triple Barrier Meta-Labeling**. The project seamlessly integrates data preparation, advanced preprocessing, model training, robust backtesting, and a graphical user interface (GUI) into a single cohesive ecosystem.
 
 ---
