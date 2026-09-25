@@ -25,10 +25,11 @@ class BacktestOnEpochEnd(Callback):
     A Keras callback to run a backtest at a specified frequency and send the
     FULL results to the UI for plotting.
     """
-    def __init__(self, queue, frequency=5):
+    def __init__(self, queue, frequency=5, params=None):
         super().__init__()
         self.queue = queue
         self.frequency = frequency
+        self.params = params if params is not None else {}
 
     def on_epoch_end(self, epoch, logs=None):
         """
@@ -38,7 +39,7 @@ class BacktestOnEpochEnd(Callback):
             print(f"\n--- Running backtest for epoch {epoch + 1} ---")
             
             # The model is saved by ModelCheckpoint, so simulate_backtest will load the best version.
-            backtest_results = simulate_backtest()
+            backtest_results = simulate_backtest(params=self.params)
             
             if backtest_results:
                 # Send the ENTIRE results dictionary to the UI

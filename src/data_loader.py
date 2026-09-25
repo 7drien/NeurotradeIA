@@ -15,26 +15,53 @@ def _validate_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     df.dropna(subset=numeric_cols, inplace=True)
     return df
 
-def _download_with_retry(ticker, start_date, end_date, interval, retries=3, initial_delay=60):
+def _download_with_retry(ticker, start_date, end_date, interval, retries=3, initial_delay=10):
     delay = initial_delay
     for i in range(retries):
         try:
-            print(f"Downloading data for {ticker} ({interval}) (Attempt {i + 1}/{retries})...")
-            data = yf.download(ticker, start=start_date, end=end_date, interval=interval)
+            data = yf.download(ticker, start=start_date, end=end_date, interval=interval, progress=False)
             if not data.empty:
                 return data
-            print(f"Warning: No data downloaded for {ticker}.")
             time.sleep(delay)
             delay *= 2
         except Exception as e:
             if "RateLimitError" in str(e) or "Too Many Requests" in str(e):
-                print(f"Rate limited. Retrying in {delay} seconds...")
                 time.sleep(delay)
                 delay *= 2
             else:
-                print(f"An unexpected error occurred: {e}")
                 return pd.DataFrame()
-    print("All download attempts failed.")
+    return pd.DataFrame()
+
+def _download_in_blocks(ticker, start_date, end_date, interval, block_size_days=30):
+    start_dt = pd.to_datetime(start_date)
+    end_dt = pd.to_datetime(end_date)
+    current_start = start_dt
+    all_data = []
+    
+    print(f"Downloading data for {ticker} in blocks of {block_size_days} days to prevent rate limits...")
+    
+    while current_start < end_dt:
+        current_end = min(current_start + pd.Timedelta(days=block_size_days), end_dt)
+        print(f"  -> Fetching {current_start.strftime('%Y-%m-%d')} to {current_end.strftime('%Y-%m-%d')}...")
+        
+        df_block = _download_with_retry(
+            ticker, 
+            current_start.strftime('%Y-%m-%d'), 
+            current_end.strftime('%Y-%m-%d'), 
+            interval
+        )
+        
+        if not df_block.empty:
+            all_data.append(df_block)
+            
+        current_start = current_end
+        time.sleep(1.5) # Anti rate-limit sleep
+        
+    if all_data:
+        combined_df = pd.concat(all_data)
+        combined_df = combined_df[~combined_df.index.duplicated(keep='first')]
+        combined_df.sort_index(inplace=True)
+        return combined_df
     return pd.DataFrame()
 
 def get_data(ticker=TICKER, start_date=START_DATE_STR, end_date=END_DATE_STR, interval=INTERVAL, use_cache=True):
@@ -51,8 +78,9 @@ def get_data(ticker=TICKER, start_date=START_DATE_STR, end_date=END_DATE_STR, in
         except Exception as e:
             print(f"Could not read cache file: {e}. Re-downloading...")
 
-    data = _download_with_retry(ticker, start_date, end_date, interval)
+    data = _download_in_blocks(ticker, start_date, end_date, interval)
     if data.empty:
+        print("Error: Could not retrieve any data.")
         return pd.DataFrame()
 
     if isinstance(data.columns, pd.MultiIndex):

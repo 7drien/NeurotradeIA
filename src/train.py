@@ -9,6 +9,7 @@ from src.data_loader import get_data
 from src.preprocessing import create_sequences_triple_label
 from src.model import create_lstm_model
 from src.callbacks import UILoggerCallback, BacktestOnEpochEnd
+import src.config as config
 from src.config import TICKER, INTERVAL, N_STEPS, K_STEPS, EPOCHS, BATCH_SIZE, PROFIT_TAKE_FACTOR, STOP_LOSS_FACTOR, MAX_HOLDING_PERIOD
 
 # Helper function to calculate ATR for labeling (moved from preprocessing)
@@ -21,12 +22,32 @@ def _calculate_atr_for_labeling(df_original, period=14):
     df_original['ATR_label'] = true_range.rolling(period).mean()
     return df_original
 
-def train_model_with_callback(queue):
+def train_model_with_callback(queue, params=None):
     """
     Trains the multi-class classification model with Triple Barrier labeling.
+    Accepts a dictionary of parameters from the UI to dynamically override configuration.
     """
-    print("Starting training process...")
-    data = get_data(ticker=TICKER, interval=INTERVAL)
+    if params is None:
+        params = {}
+    
+    epochs = params.get('epochs', EPOCHS)
+    batch_size = params.get('batch_size', BATCH_SIZE)
+    n_steps = params.get('n_steps', N_STEPS)
+    lstm_units = params.get('lstm_units', 64)
+    days_to_load = params.get('days_to_load', None)
+    
+    print(f"Starting training process with dynamic parameters... (Epochs: {epochs}, Batch: {batch_size}, N_Steps: {n_steps})")
+    
+    # We dynamically pass days_to_load. Let's make get_data handle it if we modify it later.
+    # Currently get_data doesn't accept days directly, but we can patch it or let it use default.
+    # We will pass days_to_load to get_data.
+    import datetime
+    start_date_str = config.START_DATE_STR
+    if days_to_load is not None:
+        start_date = datetime.datetime.now() - datetime.timedelta(days=days_to_load)
+        start_date_str = start_date.strftime('%Y-%m-%d')
+        
+    data = get_data(ticker=TICKER, interval=INTERVAL, start_date=start_date_str)
     if data.empty:
         queue.put({'type': 'train_finished'})
         return
@@ -66,7 +87,7 @@ def train_model_with_callback(queue):
         highs_for_labels,
         lows_for_labels, 
         atrs_for_labeling, 
-        N_STEPS, 
+        n_steps, 
         K_STEPS
     )
 
@@ -106,21 +127,21 @@ def train_model_with_callback(queue):
         queue.put({'type': 'train_finished'})
         return
 
-    model = create_lstm_model(input_shape=(X_train.shape[1], X_train.shape[2]))
+    model = create_lstm_model(input_shape=(X_train.shape[1], X_train.shape[2]), lstm_units=lstm_units)
 
     # --- Callbacks ---
     ui_callback = UILoggerCallback(queue)
     early_stopping = EarlyStopping(monitor='val_loss', patience=20, restore_best_weights=True, verbose=1)
     model_checkpoint = ModelCheckpoint('best_model.keras', monitor='val_loss', save_best_only=True, verbose=1)
     # Must be after model_checkpoint so the .keras file exists!
-    backtest_callback = BacktestOnEpochEnd(queue, frequency=1)
+    backtest_callback = BacktestOnEpochEnd(queue, frequency=1, params=params)
     reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=8, min_lr=0.00001, verbose=1)
 
     print("Starting model fitting on DENSE Meta-Labeling signals...")
     model.fit(
         X_train, y_train,
-        epochs=EPOCHS,
-        batch_size=BATCH_SIZE,
+        epochs=epochs,
+        batch_size=batch_size,
         validation_data=(X_val, y_val),
         callbacks=[ui_callback, model_checkpoint, backtest_callback, early_stopping, reduce_lr],
         class_weight=class_weights_dict,

@@ -32,12 +32,24 @@ def _calculate_indicators(df, atr_period_labeling=14):
     
     return df
 
-def simulate_backtest():
+def simulate_backtest(params=None):
     """
     Performs the backtest with Triple Barrier Method labels and regime filter.
     """
+    if params is None:
+        params = {}
+    n_steps = params.get('n_steps', N_STEPS)
+    days_to_load = params.get('days_to_load', None)
+    
     print("Loading data...")
-    data = get_data(ticker=TICKER, interval=INTERVAL)
+    import datetime
+    from src.config import START_DATE_STR
+    start_date_str = START_DATE_STR
+    if days_to_load is not None:
+        start_date = datetime.datetime.now() - datetime.timedelta(days=days_to_load)
+        start_date_str = start_date.strftime('%Y-%m-%d')
+        
+    data = get_data(ticker=TICKER, interval=INTERVAL, start_date=start_date_str)
     if data.empty: return None
 
     # Calculate all indicators on the original data
@@ -69,7 +81,7 @@ def simulate_backtest():
         highs_for_labels,
         lows_for_labels, 
         atrs_for_labeling, 
-        N_STEPS, 
+        n_steps, 
         K_STEPS
     )
     if len(X) == 0: return None
@@ -85,7 +97,7 @@ def simulate_backtest():
     train_size = int(len(X) * 0.8)
     X_test = X[train_size:]
     
-    test_start_index_in_df = train_size + N_STEPS - 1
+    test_start_index_in_df = train_size + n_steps - 1
     end_slice = test_start_index_in_df + len(X_test)
     test_indices = df_processed.index[test_start_index_in_df:end_slice]
     
