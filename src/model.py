@@ -27,31 +27,32 @@ def opportunity_cost_loss(y_true, y_pred):
     
     return base_loss + opportunity_cost
 
+from tensorflow.keras.regularizers import l2
+
 def create_lstm_model(input_shape):
     """
-    Creates a deep CNN-LSTM model compiled with our custom loss function.
+    Creates a leaner GRU model compiled for binary classification (Meta-Labeling).
+    Reduced complexity and added L2 regularization to prevent overfitting on noisy data.
     """
     model = Sequential([
-        Conv1D(filters=64, kernel_size=3, activation='relu', input_shape=input_shape, padding='causal'),
+        # Simpler sequence modeling with GRU, heavily regularized
+        LSTM(64, return_sequences=True, input_shape=input_shape, kernel_regularizer=l2(0.001)),
         BatchNormalization(),
-        MaxPooling1D(pool_size=2),
-
-        LSTM(100, return_sequences=True),
-        Dropout(0.3),
-        BatchNormalization(),
+        Dropout(0.4),
         
-        LSTM(50, return_sequences=False),
-        Dropout(0.3),
+        LSTM(32, return_sequences=False, kernel_regularizer=l2(0.001)),
         BatchNormalization(),
+        Dropout(0.4),
 
-        Dense(50, activation='relu'),
-        Dense(3, activation='softmax')
+        Dense(32, activation='relu', kernel_regularizer=l2(0.001)),
+        Dropout(0.2),
+        Dense(2, activation='softmax')
     ])
     
-    # Compile the model with the new custom loss function
+    # Compile the model with standard cross-entropy for binary task
     model.compile(
         optimizer='adam', 
-        loss=opportunity_cost_loss, 
+        loss='categorical_crossentropy', 
         metrics=['accuracy']
     )
     return model

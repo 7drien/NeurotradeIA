@@ -10,7 +10,8 @@ from src.model import opportunity_cost_loss
 from src.config import (
     TICKER, INTERVAL, N_STEPS, K_STEPS,
     INITIAL_CAPITAL, TRANSACTION_COST, ATR_MULTIPLIER, TRAILING_STOP_PCT,
-    CONFIRMATION_PERIOD, REGIME_FILTER_PERIOD, RISK_PER_TRADE_PCT
+    CONFIRMATION_PERIOD, REGIME_FILTER_PERIOD, RISK_PER_TRADE_PCT,
+    PROFIT_TAKE_FACTOR, STOP_LOSS_FACTOR, MAX_HOLDING_PERIOD
 )
 
 def _calculate_indicators(df, atr_period_labeling=14):
@@ -42,8 +43,12 @@ def simulate_backtest():
     # Calculate all indicators on the original data
     df_with_all_indicators = _calculate_indicators(data.copy())
     
-    feature_cols = ['Open', 'High', 'Low', 'Close', 'Volume']
-    df_processed = df_with_all_indicators[feature_cols + ['ATR', 'MA_long', 'ATR_label']].copy()
+    from src.features import add_advanced_features
+    df_with_features = add_advanced_features(df_with_all_indicators.copy())
+    
+    feature_cols = ['Open', 'High', 'Low', 'Close', 'Volume', 'Close_FracDiff', 'GK_Vol_14', 'Rolling_VWAP', 'RSI_14']
+    all_needed_cols = list(set(feature_cols + ['ATR', 'MA_long', 'ATR_label', 'High', 'Low', 'Close']))
+    df_processed = df_with_features[all_needed_cols].copy()
     df_processed.dropna(inplace=True)
     
     try:
@@ -58,7 +63,7 @@ def simulate_backtest():
         print("ERROR: scaler.joblib not found.")
         return None
 
-    X, y_true = create_sequences_triple_label(
+    X, y_true, sample_weights = create_sequences_triple_label(
         scaled_features, 
         prices_for_labels, 
         highs_for_labels,
@@ -72,7 +77,7 @@ def simulate_backtest():
     print("Loading model...")
     try:
         custom_objects = {'opportunity_cost_loss': opportunity_cost_loss}
-        model = load_model('best_model.h5', custom_objects=custom_objects) # Corrected: load_model
+        model = load_model('best_model.keras', custom_objects=custom_objects)
     except IOError:
         print("Backtesting failed: Model file not found.")
         return None
@@ -83,168 +88,113 @@ def simulate_backtest():
     test_start_index_in_df = train_size + N_STEPS - 1
     end_slice = test_start_index_in_df + len(X_test)
     test_indices = df_processed.index[test_start_index_in_df:end_slice]
-    actual_prices = df_processed['Close'].loc[test_indices].values
-    atr_values = df_processed['ATR'].loc[test_indices].values
-    ma_long_values = df_processed['MA_long'].loc[test_indices].values
     
-    print("Making predictions...")
+    print("Making predictions (Meta-Labeling)...")
     predictions = model.predict(X_test)
-    predicted_labels = np.argmax(predictions, axis=1)
+    ml_confidence = predictions[:, 1]
+    ml_approve = pd.Series(ml_confidence > 0.5, index=test_indices)
 
-    # --- Backtesting Logic with Regime Filter and Confirmation ---
-    capital = INITIAL_CAPITAL
-    position_type = None
-    position_size = 0.0
-    entry_price = 0.0
-    portfolio_value_list = [INITIAL_CAPITAL]
-    signals = []
-    stop_loss_price = 0
-    trailing_stop_price = 0
-    buy_confirmation_count = 0
-    sell_confirmation_count = 0
-
-    min_len_sim = min(len(actual_prices) - 1, len(predicted_labels))
-
-    for i in range(min_len_sim):
-        current_price = actual_prices[i]
-        label = predicted_labels[i]
-        is_uptrend = current_price > ma_long_values[i]
-
-        # --- Risk Management ---
-        if position_type == 'long':
-            if current_price < stop_loss_price or current_price < trailing_stop_price:
-                capital += position_size * current_price * (1 - TRANSACTION_COST)
-                signals.append({'day': i, 'type': 'Close Long (Stop)'})
-                position_type = None; position_size = 0.0
-            else:
-                trailing_stop_price = max(trailing_stop_price, current_price * (1 - TRAILING_STOP_PCT))
-        
-        elif position_type == 'short':
-            if current_price > stop_loss_price or current_price > trailing_stop_price:
-                capital -= position_size * current_price * (1 + TRANSACTION_COST)
-                signals.append({'day': i, 'type': 'Close Short (Stop)'})
-                position_type = None; position_size = 0.0
-            else:
-                trailing_stop_price = min(trailing_stop_price, current_price * (1 + TRAILING_STOP_PCT))
-
-        # --- Confirmation and Trading Logic with Regime Filter ---
-        if label == 2: buy_confirmation_count += 1; sell_confirmation_count = 0
-        elif label == 0: sell_confirmation_count += 1; buy_confirmation_count = 0
-        else: buy_confirmation_count = 0; sell_confirmation_count = 0
-
-        if position_type is None:
-            if is_uptrend and buy_confirmation_count >= CONFIRMATION_PERIOD:
-                atr_at_buy = atr_values[i]
-                if pd.notna(atr_at_buy):
-                    risk_amount = capital * RISK_PER_TRADE_PCT
-                    stop_loss_level = current_price - (atr_at_buy * ATR_MULTIPLIER)
-                    price_diff_to_stop = current_price - stop_loss_level
-                    
-                    if price_diff_to_stop <= 0:
-                        buy_confirmation_count = 0
-                        continue
-
-                    calculated_position_size = risk_amount / price_diff_to_stop
-                    max_affordable_positions = (capital * (1 - TRANSACTION_COST)) / current_price
-                    position_size = min(calculated_position_size, max_affordable_positions)
-                    
-                    if position_size * current_price * (1 + TRANSACTION_COST) > capital:
-                        buy_confirmation_count = 0
-                        continue
-
-                    capital -= position_size * current_price * (1 + TRANSACTION_COST)
-                    entry_price = current_price
-                    position_type = 'long'
-                    signals.append({'day': i, 'type': 'Open Long'})
-                    stop_loss_price = stop_loss_level
-                    trailing_stop_price = current_price * (1 - TRAILING_STOP_PCT)
-                    buy_confirmation_count = 0
-            elif not is_uptrend and sell_confirmation_count >= CONFIRMATION_PERIOD:
-                atr_at_buy = atr_values[i]
-                if pd.notna(atr_at_buy):
-                    risk_amount = capital * RISK_PER_TRADE_PCT
-                    stop_loss_level = current_price + (atr_at_buy * ATR_MULTIPLIER)
-                    price_diff_to_stop = stop_loss_level - current_price
-                    
-                    if price_diff_to_stop <= 0:
-                        sell_confirmation_count = 0
-                        continue
-
-                    calculated_position_size = risk_amount / price_diff_to_stop
-                    max_shortable_positions = (capital * (1 - TRANSACTION_COST)) / current_price
-                    position_size = min(calculated_position_size, max_shortable_positions)
-
-                    if position_size * current_price * (1 + TRANSACTION_COST) > capital:
-                        sell_confirmation_count = 0
-                        continue
-
-                    capital += position_size * current_price * (1 - TRANSACTION_COST)
-                    entry_price = current_price
-                    position_type = 'short'
-                    signals.append({'day': i, 'type': 'Open Short'})
-                    stop_loss_price = stop_loss_level
-                    trailing_stop_price = current_price * (1 + TRAILING_STOP_PCT)
-                    sell_confirmation_count = 0
-        
-        elif position_type == 'long' and sell_confirmation_count >= CONFIRMATION_PERIOD:
-            capital += position_size * current_price * (1 - TRANSACTION_COST)
-            signals.append({'day': i, 'type': 'Close Long'})
-            position_type = None; position_size = 0.0
-            
-        elif position_type == 'short' and buy_confirmation_count >= CONFIRMATION_PERIOD:
-            capital -= position_size * current_price * (1 + TRANSACTION_COST)
-            signals.append({'day': i, 'type': 'Close Short'})
-            position_type = None; position_size = 0.0
-
-        # --- Portfolio Value Calculation ---
-        if position_type == 'long':
-            portfolio_value = capital + (position_size * current_price)
-        elif position_type == 'short':
-            portfolio_value = capital + (entry_price - current_price) * position_size
-        else:
-            portfolio_value = capital
-        portfolio_value_list.append(portfolio_value)
-
-    if not signals: print(">>> WARNING: No trades were executed.")
+    # --- VectorBT Institutional Backtester ---
+    import vectorbt as vbt
     
-    portfolio_value = np.array(portfolio_value_list, dtype=float)
-    min_len_plot = min(len(test_indices), len(portfolio_value))
+    price = df_processed['Close'].loc[test_indices]
+    
+    # 1. Primary Model (RSI + Z-Score)
+    # We must calculate this on the full df to avoid NaNs at the beginning of test_indices
+    z_score_all = (df_processed['Close'] - df_processed['Close'].rolling(100).mean()) / df_processed['Close'].rolling(100).std()
+    
+    # RSI is already computed in df_processed as 'RSI_14' from features.py!
+    rsi_all = df_processed['RSI_14']
+    
+    cond_long_all = (z_score_all < -2) & (rsi_all < 30)
+    cond_short_all = (z_score_all > 2) & (rsi_all > 70)
+    
+    cross_long_all = cond_long_all & ~cond_long_all.shift(1).fillna(False)
+    cross_short_all = cond_short_all & ~cond_short_all.shift(1).fillna(False)
+    
+    # Slice to test_indices
+    ma_cross_long = cross_long_all.loc[test_indices]
+    ma_cross_short = cross_short_all.loc[test_indices]
+    
+    # 2. Filter with ML Predictions
+    entries = ma_cross_long & ml_approve
+    short_entries = ma_cross_short & ml_approve
+    
+    # 3. Dynamic ATR Stops (TP & SL percentages)
+    atr = df_processed['ATR'].loc[test_indices]
+    sl_pct = (atr * STOP_LOSS_FACTOR) / price
+    tp_pct = (atr * PROFIT_TAKE_FACTOR) / price
+    
+    # 4. Time Stops (MAX_HOLDING_PERIOD)
+    exits = entries.vbt.signals.fshift(MAX_HOLDING_PERIOD)
+    short_exits = short_entries.vbt.signals.fshift(MAX_HOLDING_PERIOD)
+    
+    # 5. Run VectorBT Portfolio Simulation
+    print("Running VectorBT Simulation...")
+    pf = vbt.Portfolio.from_signals(
+        price,
+        entries=entries,
+        exits=exits,
+        short_entries=short_entries,
+        short_exits=short_exits,
+        sl_stop=sl_pct.values,
+        tp_stop=tp_pct.values,
+        fees=TRANSACTION_COST,
+        init_cash=INITIAL_CAPITAL,
+        freq='15min'
+    )
     
     return {
-        "test_indices": test_indices[:min_len_plot],
-        "actual_prices": actual_prices[:min_len_plot],
-        "signals": signals,
-        "portfolio_value": portfolio_value[:min_len_plot],
+        "portfolio": pf,
         "initial_capital": INITIAL_CAPITAL,
     }
 
 def plot_backtest_results(results, fig=None, ax1=None, ax2=None):
     if not results: return
+    
+    pf = results["portfolio"]
+    initial_capital = results["initial_capital"]
+    
     if fig is None:
         fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(16, 12), gridspec_kw={'height_ratios': [3, 1]}, sharex=True)
         new_figure = True
     else:
         new_figure = False
         ax1.clear(); ax2.clear()
-    print("Plotting results...")
-    test_indices = results['test_indices']
-    actual_prices = results['actual_prices']
-    signals = results['signals']
-    portfolio_value = results['portfolio_value']
-    initial_capital = results['initial_capital']
+        
+    test_indices = pf.close.index
+    actual_prices = pf.close.values
+    portfolio_value = pf.value().values
+    
     ax1.plot(test_indices, actual_prices, label='Actual Price', color='blue', zorder=1)
-    open_long_signals = [s for s in signals if s['type'] == 'Open Long']
-    close_long_signals = [s for s in signals if s['type'] in ['Close Long', 'Close Long (Stop)']]
-    open_short_signals = [s for s in signals if s['type'] == 'Open Short']
-    close_short_signals = [s for s in signals if s['type'] in ['Close Short', 'Close Short (Stop)']]
-    if open_long_signals: ax1.scatter(test_indices[[s['day'] for s in open_long_signals]], actual_prices[[s['day'] for s in open_long_signals]], label='Open Long', marker='^', color='green', s=120, zorder=5)
-    if close_long_signals: ax1.scatter(test_indices[[s['day'] for s in close_long_signals]], actual_prices[[s['day'] for s in close_long_signals]], label='Close Long', marker='x', color='green', s=120, zorder=5)
-    if open_short_signals: ax1.scatter(test_indices[[s['day'] for s in open_short_signals]], actual_prices[[s['day'] for s in open_short_signals]], label='Open Short', marker='v', color='red', s=120, zorder=5)
-    if close_short_signals: ax1.scatter(test_indices[[s['day'] for s in close_short_signals]], actual_prices[[s['day'] for s in close_short_signals]], label='Close Short', marker='x', color='red', s=120, zorder=5)
-    ax1.set_title('Trading Strategy Backtest'); ax1.set_ylabel('Price (USD)'); ax1.legend(); ax1.grid(True)
+    
+    trades = pf.trades
+    if trades.count() > 0:
+        records = trades.records_readable
+        entries_idx = records.get('Entry Timestamp', records.get('Entry Index'))
+        entry_prices = records.get('Avg Entry Price', records.get('Entry Price'))
+        exit_idx = records.get('Exit Timestamp', records.get('Exit Index'))
+        exit_prices = records.get('Avg Exit Price', records.get('Exit Price'))
+        direction = records['Direction']
+        
+        long_mask = direction == 'Long'
+        short_mask = direction == 'Short'
+        
+        if long_mask.any():
+            ax1.scatter(entries_idx[long_mask], entry_prices[long_mask], label='Open Long', marker='^', color='green', s=120, zorder=5)
+            ax1.scatter(exit_idx[long_mask], exit_prices[long_mask], label='Close Long', marker='x', color='green', s=120, zorder=5)
+            
+        if short_mask.any():
+            ax1.scatter(entries_idx[short_mask], entry_prices[short_mask], label='Open Short', marker='v', color='red', s=120, zorder=5)
+            ax1.scatter(exit_idx[short_mask], exit_prices[short_mask], label='Close Short', marker='x', color='red', s=120, zorder=5)
+            
+    ax1.set_title('VectorBT Meta-Labeling Backtest'); ax1.set_ylabel('Price (USD)'); ax1.legend(); ax1.grid(True)
     ax2.plot(test_indices, portfolio_value, label='Portfolio Value', color='purple'); ax2.set_title('Portfolio Value Over Time'); ax2.set_ylabel('Portfolio Value (USD)'); ax2.set_xlabel('Date'); ax2.grid(True)
     fig.tight_layout()
     if new_figure: plt.show()
+    
     final_value = portfolio_value[-1]
     returns = (final_value - initial_capital) / initial_capital * 100
-    print(f"\nInitial Capital: ${initial_capital:,.2f}\nFinal Portfolio Value: ${final_value:,.2f}\nTotal Return: {returns:.2f}%")
+    
+    print(f"\n--- VectorBT Backtest Results ---")
+    print(f"Total Return: {returns:.2f}% | Win Rate: {pf.trades.win_rate() * 100:.2f}% | Max Drawdown: {pf.max_drawdown() * 100:.2f}%")
