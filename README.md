@@ -85,17 +85,23 @@ To preserve physical market relationships and avoid lookahead bias, each 128-can
 
 ---
 
-### ⚡ Walk-Forward Backtesting & GUI
+### ⚡ 128-Candle Oscillator Strategy & Fast Backtesting
 
-1. **Trading Signals**:
-   * **Long (Buy)**: Generated when $\hat{y} > 1.001$ (predicted upward movement $> 0.1\%$).
-   * **Short (Sell)**: Generated when $\hat{y} < 0.999$ (predicted downward movement $> 0.1\%$).
-2. **Trade Duration**: Positions are held for 16 candles, directly aligned with the prediction horizon.
-3. **Execution Simulation**: Walk-forward backtesting powered by **VectorBT**, incorporating realistic transaction costs (0.1%).
-4. **Desktop GUI (`main.py`)**: Built with Tkinter and Matplotlib to monitor:
-   * Dynamic hyperparameters (Epochs, Batch Size, Sequence Length, Horizon, Days to Load).
-   * Real-time training loss, directional accuracy, and validation curves.
-   * Cumulative portfolio equity curve and trade markers.
+The trained neural network acts as a **128-candle forward oscillator** predicting the relative price expansion or contraction over the next 16 candles:
+
+1. **Threshold $x$ Trading Signals**:
+   * **BUY (Long)**: Generated when model output $\hat{y} > 1 + x$.
+   * **SELL (Short)**: Generated when model output $\hat{y} < 1 - x$.
+   * **NEUTRAL**: Position exits or holds when within $[1 - x, 1 + x]$.
+   * **Trade Duration**: Fixed 16-candle holding period (matching forecast horizon).
+2. **Candle-by-Candle Prediction Caching**:
+   * Model outputs for each candle are evaluated and stored directly into `data/cached/model_predictions.pkl`.
+   * When tuning the threshold $x$ in the UI, **no retraining or re-inference is required**. VectorBT recalculates the trade executions, equity curve, win rate, and total return in **under 50 milliseconds**.
+3. **Interactive 3-Panel GUI (`main.py`)**:
+   * **Top Chart**: Market price series with precise Buy (▲) and Sell (▼) execution markers.
+   * **Middle Chart**: The 128-candle neural oscillator line ($\hat{y}$) with dynamic $1 + x$ (green dashed) and $1 - x$ (red dashed) threshold boundaries.
+   * **Bottom Chart**: Real-time portfolio equity curve.
+   * **Controls**: Live input field for threshold $x$, preset buttons (`0.001`, `0.002`, `0.005`, `0.010`), and an instant `⚡ RECALCULATE BACKTEST` button.
 
 ---
 
