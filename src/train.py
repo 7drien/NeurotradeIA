@@ -68,17 +68,28 @@ def train_model_with_callback(queue, params=None):
 
     # Callbacks
     ui_callback = UILoggerCallback(queue)
-    early_stopping = EarlyStopping(monitor='val_loss', patience=15, restore_best_weights=True, verbose=1)
     model_checkpoint = ModelCheckpoint('best_model.keras', monitor='val_loss', save_best_only=True, verbose=1)
     backtest_callback = BacktestOnEpochEnd(queue, frequency=1, params=params)
     reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=5, min_lr=0.00001, verbose=1)
 
-    print("Fitting MLP model...")
+    callbacks_list = [ui_callback, model_checkpoint, backtest_callback, reduce_lr]
+
+    # Only enable EarlyStopping if explicitly requested in params
+    use_early_stopping = params.get('early_stopping', False)
+    if use_early_stopping:
+        patience = params.get('patience', 15)
+        early_stopping = EarlyStopping(monitor='val_loss', patience=patience, restore_best_weights=True, verbose=1)
+        callbacks_list.append(early_stopping)
+        print(f"EarlyStopping enabled (patience={patience}).")
+    else:
+        print(f"EarlyStopping disabled: training will run for the full {epochs} epochs (best weights saved via ModelCheckpoint).")
+
+    print(f"Fitting MLP model for {epochs} epochs...")
     model.fit(
         X_train, y_train,
         epochs=epochs,
         batch_size=batch_size,
         validation_data=(X_val, y_val),
-        callbacks=[ui_callback, model_checkpoint, backtest_callback, early_stopping, reduce_lr],
+        callbacks=callbacks_list,
         verbose=1
     )

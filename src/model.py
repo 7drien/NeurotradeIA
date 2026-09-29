@@ -28,7 +28,7 @@ def opportunity_cost_loss(y_true, y_pred):
     """Legacy loss preserved for backward compatibility."""
     return tf.keras.losses.categorical_crossentropy(y_true, y_pred)
 
-def create_dense_model(input_dim=1024, lr=0.001):
+def create_dense_model(input_dim=1024, lr=0.005):
     """
     Creates a Deep Neural Network for predicting 16-candle ahead price ratios.
     

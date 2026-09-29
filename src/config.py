@@ -12,7 +12,7 @@ START_DATE_STR = START_DATE.strftime('%Y-%m-%d')
 
 # --- Preprocessing parameters ---
 N_STEPS = 128 # 128 consecutive candles (input segment)
-K_STEPS = 16  # Prediction horizon (predict price 16 candles ahead)
+K_STEPS = 32  # Prediction horizon (predict price 32 candles ahead)
 
 # Prediction & Strategy parameters (Dual-Threshold Oscillator Strategy)
 DEFAULT_X_ENTRY = 0.01  # Entry threshold: Buy > 1 + 0.01 (1.010), Sell < 1 - 0.01 (0.990)
@@ -21,7 +21,7 @@ PREDICTION_BUY_THRESHOLD = 1.0 + DEFAULT_X_ENTRY
 PREDICTION_SELL_THRESHOLD = 1.0 - DEFAULT_X_ENTRY
 PROFIT_TAKE_FACTOR = 2.0          # Backward compatibility
 STOP_LOSS_FACTOR = 1.0            # Backward compatibility
-MAX_HOLDING_PERIOD = 16           # Backward compatibility
+MAX_HOLDING_PERIOD = 32           # Backward compatibility
 
 # --- Model parameters ---
 EPOCHS = 50

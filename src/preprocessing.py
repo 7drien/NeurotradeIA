@@ -13,7 +13,7 @@ def compute_rsi(series, period=14):
     rs = gain / (loss + 1e-8)
     return 100.0 - (100.0 / (1.0 + rs))
 
-def create_sequences(df: pd.DataFrame, n_steps: int = 128, k_steps: int = 16):
+def create_sequences(df: pd.DataFrame, n_steps: int = N_STEPS, k_steps: int = K_STEPS):
     """
     Creates 1024-dimensional input feature vectors and regression targets.
     
@@ -31,7 +31,7 @@ def create_sequences(df: pd.DataFrame, n_steps: int = 128, k_steps: int = 16):
     - Williams %R is scaled to [-1, 1] centered at -50.
     
     Target:
-    - Future price ratio: Close[t + 16] / Close[t], where t is the 128th candle.
+    - Future price ratio: Close[t + k_steps] / Close[t], where t is the 128th candle.
     - Values in (0, 2), where 1.0 represents unchanged price.
     """
     # Ensure all required features are present
