@@ -11,17 +11,19 @@ END_DATE_STR = END_DATE.strftime('%Y-%m-%d')
 START_DATE_STR = START_DATE.strftime('%Y-%m-%d')
 
 # --- Preprocessing parameters ---
-N_STEPS = 100
-K_STEPS = 4 # Prediction horizon (e.g., 4 * 15min = 1 hour ahead)
+N_STEPS = 128 # 128 consecutive candles (input segment)
+K_STEPS = 16  # Prediction horizon (predict price 16 candles ahead)
 
-# Triple Barrier Method parameters
-PROFIT_TAKE_FACTOR = 2.0 # Take profit when price moves 2 * ATR
-STOP_LOSS_FACTOR = 1.0   # Stop loss when price moves 1 * ATR
-MAX_HOLDING_PERIOD = 10  # Max 10 candles (2.5 hours) holding period
+# Prediction & Strategy parameters
+PREDICTION_BUY_THRESHOLD = 1.001  # Predicts > 0.1% increase
+PREDICTION_SELL_THRESHOLD = 0.999 # Predicts > 0.1% decrease
+MAX_HOLDING_PERIOD = 16           # Max 16 candles holding period
+PROFIT_TAKE_FACTOR = 2.0          # Backward compatibility
+STOP_LOSS_FACTOR = 1.0            # Backward compatibility
 
 # --- Model parameters ---
 EPOCHS = 50
-BATCH_SIZE = 16
+BATCH_SIZE = 32
 
 # --- Backtesting parameters ---
 INITIAL_CAPITAL = 10000.0

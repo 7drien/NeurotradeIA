@@ -1,40 +1,101 @@
-# NeurotradeIA: Deep Learning Model for Trading
+# NeurotradeIA: Deep Learning Model for Price Ratio Prediction
 
-> **⚠️ Disclaimer**: This project is intended purely for visualization, educational purposes, and experimentation. It does not constitute financial advice, and the models or strategies developed here should not be used for live trading with real capital.
+> **⚠️ Disclaimer**: This project is intended purely for educational purposes, quantitative research, and experimentation. It does not constitute financial advice, and the models or strategies developed here should not be used for live trading with real capital.
 
-NeurotradeIA is a comprehensive pipeline designed to train deep learning models that predict the success of trading signals using **Triple Barrier Meta-Labeling**. The project seamlessly integrates data preparation, advanced preprocessing, model training, robust backtesting, and a graphical user interface (GUI) into a single cohesive ecosystem.
+NeurotradeIA is a quantitative trading and deep learning framework designed to predict future asset price movements using a multi-layer perceptron (MLP) with sequence-normalized market features. The model processes 128 consecutive candles and forecasts the price ratio **16 candles ahead** relative to the current candle.
 
 ---
 
-## 🚀 Technical Characteristics
+## 🚀 Technical Architecture
 
-### 🧠 Deep Learning Architecture & Strategy
-* **Supported Models**: The architecture supports sequential neural networks, primarily focused on **LSTMs (Long Short-Term Memory)** with customizable layers.
-* **Meta-Labeling & Triple Barrier Method**: Instead of simply predicting up or down, the model evaluates underlying signals (like Bollinger Bands with z-scores) and predicts whether taking a trade will hit a profit target, hit a stop loss, or expire (Failure/Hold vs Success/Trade).
-* **Strict Chronological Validation**: To prevent data leakage and look-ahead bias, the dataset is split chronologically into **Train -> Validation**. 
-  * *Train* is strictly the past.
-  * *Validation* is the period immediately following the train set.
-  * No global shuffling is permitted, and normalization is exclusively fitted on the training segment.
+### 🧠 Model Architecture & Specifications
+* **Input Layer**: 1024-dimensional feature vector ($128 \text{ consecutive candles} \times 8 \text{ features}$).
+* **Hidden Layers**: 4 dense layers with **LeakyReLU** activations:
+  * Dense(256) + LeakyReLU($\alpha=0.01$)
+  * Dense(64) + LeakyReLU($\alpha=0.01$)
+  * Dense(16) + LeakyReLU($\alpha=0.01$)
+  * Dense(8) + LeakyReLU($\alpha=0.01$)
+* **Output Layer**: 1-dimensional output with **$2 \times \text{sigmoid}$** activation:
+  $$\hat{y} = 2 \cdot \sigma(x) = \frac{2}{1 + e^{-x}} \in (0, 2)$$
+* **Loss Function**: Mean Squared Error (MSE), evaluated with Mean Absolute Error (MAE) and Directional Accuracy.
 
-### ⚡ Performance Optimization
-* **Data Caching**: Preprocessed DataFrames and scaler objects (`scaler.joblib`, `yfinance.cache`) are cached to allow for nearly instant data loading upon startup, avoiding the redundant recalculation of features or re-reading of heavy data on every run.
-* **Cython Extensions**: Infrastructure exists to accelerate computationally heavy time-series operations (such as generating sliding windows) in C using **Cython**.
+```text
+[Input: 1024 Features]
+        │
+   Dense(256) ──> LeakyReLU(0.01)
+        │
+   Dense(64)  ──> LeakyReLU(0.01)
+        │
+   Dense(16)  ──> LeakyReLU(0.01)
+        │
+   Dense(8)   ──> LeakyReLU(0.01)
+        │
+   Dense(1)   ──> 2 * Sigmoid Activation
+        │
+[Output: Future Price Ratio in (0, 2)]
+```
 
-### 🔄 End-to-End Pipeline
-1. **Data Ingestion**: Automated financial data downloading via `yfinance`.
-2. **Preprocessing & Feature Engineering**: Calculates advanced technical indicators (z-score Bollinger Bands, MACD, RSI, ATR) and generates sequences (sliding windows of context candles).
-3. **Training & Validation**: 
-   * Dynamic learning rate scheduling and early stopping based on real-time validation metrics.
-   * Auto-saving the best-performing model weights natively as `.keras`.
-4. **Walk-Forward Backtesting**: Realistic simulation of trading strategies based on the model's signals triggered during validation.
-   * Incorporates transaction costs.
-   * Evaluated simultaneously with model training via custom Keras callbacks.
+---
 
-### 🖥️ User Interface (Tkinter)
-* **Training Hub**: A dedicated Tkinter GUI (`main.py` and `ui/main_ui.py`) allows users to:
-  * Dynamically configure hyperparameters (Epochs, Batch Size, Sequence Length, LSTM Units, Days to Load).
-  * Monitor the loss curves, win rates, and validation metric curves in real-time.
-* **Threaded Execution**: The training loop runs in an isolated background thread (daemon), ensuring the Tkinter UI remains responsive and does not freeze during intensive epochs.
+### 📊 Input Features (8 Features × 128 Candles = 1024 Values)
+
+Each candle within the 128-candle sliding window includes 8 quantitative features:
+1. **Open**: Opening price.
+2. **Close**: Closing price.
+3. **Low**: Minimum price of the candle.
+4. **High**: Maximum price of the candle.
+5. **Volume**: Traded volume.
+6. **RSI**: 14-period Relative Strength Index.
+7. **Z-Score**: Rolling 100-period price z-score: $\frac{Close - \mu_{100}}{\sigma_{100}}$.
+8. **Williams %R**: 14-period Williams %R oscillator: $\frac{High_{14} - Close}{High_{14} - Low_{14}} \times (-100)$.
+
+---
+
+### 📐 Sequence-Wise Normalization
+
+To preserve physical market relationships and avoid lookahead bias, each 128-candle segment is normalized independently:
+
+* **Prices (Open, Close, Low, High)**:
+  All four price series are normalized using the **exact same mean ($\mu_{price}$) and standard deviation ($\sigma_{price}$)** calculated across the entire 128-candle segment:
+  $$\mu_{price} = \frac{1}{4 \times 128} \sum_{i=1}^{128} (Open_i + Close_i + Low_i + High_i)$$
+  $$\sigma_{price} = \sqrt{\frac{1}{4 \times 128} \sum_{i=1}^{128} ((Open_i - \mu_{price})^2 + (Close_i - \mu_{price})^2 + \dots)}$$
+  $$Open_{norm} = \frac{Open - \mu_{price}}{\sigma_{price}}, \quad Close_{norm} = \frac{Close - \mu_{price}}{\sigma_{price}}, \quad \dots$$
+  *Benefit*: Candle structures, spreads ($High - Low$), bodies ($|Close - Open|$), and relative price trends are preserved identically.
+* **Volume**: Standardized per segment using its 128-candle mean and standard deviation:
+  $$Volume_{norm} = \frac{Volume - \mu_{vol}}{\sigma_{vol}}$$
+* **RSI**: Scaled from $[0, 100]$ to $[-1, 1]$ centered at 50:
+  $$RSI_{norm} = \frac{RSI - 50}{50}$$
+* **Z-Score**: Bounded/clipped to $[-5, 5]$ to suppress extreme volatility spikes.
+* **Williams %R**: Scaled from $[-100, 0]$ to $[-1, 1]$ centered at -50:
+  $$Williams\%R_{norm} = \frac{Williams\%R + 50}{50}$$
+
+---
+
+### 🎯 Target & Prediction Horizon
+
+* **Horizon**: $K = 16$ candles into the future.
+* **Target Ratio**:
+  $$y = \frac{Close_{t + 16}}{Close_t}$$
+  where $t$ is the index of the 128th candle (the present moment).
+* **Target Interpretation**:
+  * $y = 1.0$: Price remains unchanged (100% of current price).
+  * $y > 1.0$: Price increases over the next 16 candles (up to 200%).
+  * $y < 1.0$: Price decreases over the next 16 candles (down to 0%).
+* **Zero Data Leakage**: By normalizing each segment independently and anchoring the target ratio strictly to the 128th candle, the model has no prior exposure to future candles.
+
+---
+
+### ⚡ Walk-Forward Backtesting & GUI
+
+1. **Trading Signals**:
+   * **Long (Buy)**: Generated when $\hat{y} > 1.001$ (predicted upward movement $> 0.1\%$).
+   * **Short (Sell)**: Generated when $\hat{y} < 0.999$ (predicted downward movement $> 0.1\%$).
+2. **Trade Duration**: Positions are held for 16 candles, directly aligned with the prediction horizon.
+3. **Execution Simulation**: Walk-forward backtesting powered by **VectorBT**, incorporating realistic transaction costs (0.1%).
+4. **Desktop GUI (`main.py`)**: Built with Tkinter and Matplotlib to monitor:
+   * Dynamic hyperparameters (Epochs, Batch Size, Sequence Length, Horizon, Days to Load).
+   * Real-time training loss, directional accuracy, and validation curves.
+   * Cumulative portfolio equity curve and trade markers.
 
 ---
 
@@ -44,83 +105,60 @@ NeurotradeIA is a comprehensive pipeline designed to train deep learning models 
 project_root/
 │
 ├── data/
-│   ├── raw/                 # Raw data downloaded via yfinance
-│   ├── processed/           # Transformed and normalized data
-│   ├── cached/              # Cache files for accelerated loading
+│   ├── raw/                 # Downloaded raw financial data
+│   ├── processed/           # Transformed datasets
+│   ├── cached/              # Serialized pickle caches (e.g. BTC-USD_1h.pkl)
 │
 ├── ui/
-│   ├── main_ui.py           # Main Tkinter interface with dynamic settings
+│   ├── main_ui.py           # Tkinter interface with dynamic hyperparameter controls
 │   ├── model_tester.py      # Architecture testing utilities
 │
 ├── src/
 │   ├── __init__.py
-│   ├── config.py            # Global default parameters
-│   ├── config_loader.py     # Configuration utilities
-│   ├── data_loader.py       # Downloading and caching logic
-│   ├── features.py          # Technical indicators (BB z-score, MACD, etc.)
-│   ├── preprocessing.py     # Normalization, meta-labeling, and sequence creation
-│   ├── model.py             # Neural network definitions (LSTM, etc.)
-│   ├── train.py             # Training loop with Meta-Labeling support
-│   ├── callbacks.py         # Keras callbacks for UI logging and Backtesting
-│   ├── backtesting.py       # Backtest engine with costs
-│   ├── trading_env.py       # Custom Gymnasium trading environment for RL
-│   ├── rl_train.py          # Stable-baselines3 PPO Reinforcement Learning training
-│   ├── cython_extensions/   # Compiled Cython code for calculations
-│   │   ├── fast_ops.pyx     # Optimized functions
-│   │   ├── setup.py         # Cython compilation script
+│   ├── config.py            # Global default parameters (N_STEPS=128, K_STEPS=16, etc.)
+│   ├── config_loader.py     # Configuration helper
+│   ├── data_loader.py       # Data fetching with retry logic and caching
+│   ├── features.py          # RSI, Z-Score, Williams %R indicator implementations
+│   ├── preprocessing.py     # 1024-dim sequence generation and segment-wise normalization
+│   ├── model.py             # 4-layer MLP (256-64-16-8) with LeakyReLU & 2*sigmoid
+│   ├── train.py             # Training loop, callbacks, and validation
+│   ├── callbacks.py         # Real-time UI progress logger and backtest runner
+│   ├── backtesting.py       # VectorBT walk-forward backtest engine
+│   ├── cython_extensions/   # Optional Cython optimizations
 │
 ├── README.md                # Project documentation
-├── requirements.txt         # Required Python libraries
-├── main.py                  # Entry point for the application
-└── .gitignore               # Ignored files
+├── requirements.txt         # Dependencies
+├── test_train_fast.py       # Fast single-epoch pipeline integration test
+└── main.py                  # Main entry point launching GUI
 ```
 
 ---
 
-## 📦 Installation Guide
-
-Follow these steps to install and run the project on your local machine.
+## 📦 Installation & Usage
 
 ### 1. Prerequisites
-Ensure you have **Python 3.8+** installed on your system. 
+* **Python 3.10+** (tested on Linux/macOS/Windows).
 
 ### 2. Install Dependencies
-Navigate to the project root directory and create a virtual environment (recommended). Then install the required Python packages using pip:
-
 ```bash
 pip install -r requirements.txt
 ```
-*Key libraries include: `tensorflow`, `pandas`, `numpy`, `yfinance`, `scikit-learn`, `gymnasium`, `stable-baselines3`, and `cython`.*
 
-### 3. Compile Cython Extensions (Optional)
-To benefit from Cython optimizations for fast operations, compile the C extensions:
-
+### 3. Run Fast Integration Test
+Run a quick test training verifying data ingestion, feature extraction, sequence generation, model compilation, and backtesting:
 ```bash
-cd src/cython_extensions/
-python setup.py build_ext --inplace
-cd ../../
+python test_train_fast.py
 ```
 
-### 4. Run the Application
-Once dependencies are installed, launch the main Tkinter GUI:
-
+### 4. Launch Desktop Interface
 ```bash
 python main.py
 ```
 
 ---
 
-## 📍 Important Notes & Best Practices
+## 📍 Key Methodological Highlights
 
-* **Zero Data Leakage**: Never mix future and present data. Normalization parameters (mean, standard deviation) must strictly be calculated on the training set and applied to the validation/test sets.
-* **Testing Horizons**: Experiment with multiple horizons for the sequence context size and target barriers.
-* **Baselines**: Always compare complex neural networks against simple baseline models (e.g., Buy & Hold or simple moving average crossovers).
-* **Market Noise**: Financial markets are mostly noise with slight drift. Beware of overfitting; if training loss approaches zero, the model is likely memorizing noise.
-
----
-
-## 🔮 Future Roadmap
-
-* **Advanced Reinforcement Learning**: Expand the `gymnasium` and `stable-baselines3` implementations to optimize dynamic position sizing and portfolio management on live data streams.
-* **Advanced Ensembling**: Test probabilistic models and ensemble methods to gauge signal uncertainty.
-* **Rolling Retrain**: Automate periodic model retraining to adapt to evolving market regimes (drift monitoring).
+* **Intra-Sequence Invariance**: Prices are normalized per 128-candle sequence with shared mean and standard deviation, avoiding data leakage across sliding windows and ensuring high generalization.
+* **Bounded Target Space**: The $2 \cdot \sigma(x)$ output naturally covers $(0, 2)$, preventing extreme gradient explosions common in unbounded price regression.
+* **Strict Chronological Splitting**: Training and validation sets are strictly ordered in time ($80\%$ train, $20\%$ validation) without random shuffling.

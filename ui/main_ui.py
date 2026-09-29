@@ -48,15 +48,15 @@ class App(tk.Tk):
         
         # Variables
         self.epochs_var = tk.StringVar(value="50")
-        self.batch_size_var = tk.StringVar(value="16")
-        self.n_steps_var = tk.StringVar(value="100")
-        self.lstm_units_var = tk.StringVar(value="64")
+        self.batch_size_var = tk.StringVar(value="32")
+        self.n_steps_var = tk.StringVar(value="128")
+        self.k_steps_var = tk.StringVar(value="16")
         self.days_var = tk.StringVar(value="700")
         
         self.create_input_field(left_panel, "Epochs:", self.epochs_var)
         self.create_input_field(left_panel, "Batch Size:", self.batch_size_var)
-        self.create_input_field(left_panel, "Sequence Length (Candles):", self.n_steps_var)
-        self.create_input_field(left_panel, "LSTM Units:", self.lstm_units_var)
+        self.create_input_field(left_panel, "Input Sequence (128 Candles):", self.n_steps_var)
+        self.create_input_field(left_panel, "Prediction Horizon (16 Candles):", self.k_steps_var)
         self.create_input_field(left_panel, "Days to Load:", self.days_var)
         
         self.train_button = ttk.Button(left_panel, text="▶ START TRAINING", command=self.run_training)
@@ -66,7 +66,7 @@ class App(tk.Tk):
         header_frame = ttk.Frame(right_panel)
         header_frame.pack(fill=tk.X, pady=(0, 20))
 
-        title_lbl = ttk.Label(header_frame, text="Neural Network Meta-Labeling Dashboard", style="Header.TLabel")
+        title_lbl = ttk.Label(header_frame, text="1024-Input MLP (256-64-16-8) Price Ratio Predictor", style="Header.TLabel")
         title_lbl.pack(side=tk.LEFT)
         
         # Metrics bar
@@ -121,7 +121,7 @@ class App(tk.Tk):
                 'epochs': int(self.epochs_var.get()),
                 'batch_size': int(self.batch_size_var.get()),
                 'n_steps': int(self.n_steps_var.get()),
-                'lstm_units': int(self.lstm_units_var.get()),
+                'k_steps': int(self.k_steps_var.get()),
                 'days_to_load': int(self.days_var.get())
             }
         except ValueError:
