@@ -133,6 +133,7 @@ project_root/
 │   ├── backtesting.py       # VectorBT walk-forward backtest engine
 │   ├── cython_extensions/   # Optional Cython optimizations
 │
+├── LICENSE                  # PolyForm Noncommercial License 1.0.0
 ├── README.md                # Project documentation
 ├── requirements.txt         # Dependencies
 ├── test_train_fast.py       # Fast single-epoch pipeline integration test
@@ -169,3 +170,19 @@ python main.py
 * **Intra-Sequence Invariance**: Prices are normalized per 128-candle sequence with shared mean and standard deviation, avoiding data leakage across sliding windows and ensuring high generalization.
 * **Bounded Target Space**: The $2 \cdot \sigma(x)$ output naturally covers $(0, 2)$, preventing extreme gradient explosions common in unbounded price regression.
 * **Strict Chronological Splitting**: Training and validation sets are strictly ordered in time ($80\%$ train, $20\%$ validation) without random shuffling.
+
+---
+
+## 📄 License & Restrictions
+
+This project is licensed under the **[PolyForm Noncommercial License 1.0.0](LICENSE)**.
+
+> 🚫 **Commercial Use Strictly Prohibited**
+> 
+> * **Permitted Uses**: Personal study, academic research, experimentation, testing, and non-profit hobby projects.
+> * **Prohibited Uses**: Any use, integration, distribution, or exploitation of this software, source code, datasets, or trained models for commercial advantage, monetary gain, or revenue-generating activities is strictly prohibited without an explicit commercial license granted by the author.
+> 
+> For full terms and legal conditions, refer to the [LICENSE](LICENSE) file.
+
+
+

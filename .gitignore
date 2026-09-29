@@ -121,3 +121,12 @@ cython_extensions/*.so
 data/raw/
 data/processed/
 data/cached/
+src/data/cached/
+
+# Cache and model artifacts
+*.keras
+*.joblib
+*.cache
+yfinance.cache
+cache/
+
