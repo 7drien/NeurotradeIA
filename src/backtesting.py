@@ -12,6 +12,7 @@ from src.model import two_sigmoid, directional_accuracy, opportunity_cost_loss
 from src.config import (
     TICKER, INTERVAL, N_STEPS, K_STEPS,
     INITIAL_CAPITAL, TRANSACTION_COST,
+    DEFAULT_X_ENTRY, DEFAULT_X_EXIT,
     START_DATE_STR
 )
 
@@ -98,12 +99,13 @@ def get_or_compute_predictions(params=None, force_recompute=False):
 
     return cache_data
 
-def run_backtest_with_threshold(threshold_x=0.002, predictions_data=None, k_steps=None):
+def run_backtest_with_threshold(x_entry=DEFAULT_X_ENTRY, x_exit=DEFAULT_X_EXIT, predictions_data=None):
     """
-    Runs a fast VectorBT backtest based on precomputed model outputs:
-    - BUY (Long) when output > 1.0 + x
-    - SELL (Short) when output < 1.0 - x
-    - EXIT after k_steps (16 candles)
+    Runs a fast VectorBT backtest based on precomputed model outputs with dual thresholds:
+    - Long Entry:  output > 1.0 + x_entry (e.g. > 1.010)
+    - Long Exit:   output < 1.0 + x_exit  (e.g. < 1.005)
+    - Short Entry: output < 1.0 - x_entry (e.g. < 0.990)
+    - Short Exit:  output > 1.0 - x_exit  (e.g. > 0.995)
     Takes < 50ms without retraining.
     """
     if predictions_data is None:
@@ -116,18 +118,18 @@ def run_backtest_with_threshold(threshold_x=0.002, predictions_data=None, k_step
     price = predictions_data["price"]
     preds = predictions_data["preds"]
     test_indices = predictions_data["test_indices"]
-    if k_steps is None:
-        k_steps = predictions_data.get("k_steps", K_STEPS)
 
-    buy_threshold = 1.0 + threshold_x
-    sell_threshold = 1.0 - threshold_x
+    buy_entry = 1.0 + x_entry
+    buy_exit = 1.0 + x_exit
+    sell_entry = 1.0 - x_entry
+    sell_exit = 1.0 - x_exit
 
-    entries = preds > buy_threshold
-    short_entries = preds < sell_threshold
+    # Dynamic threshold signals
+    entries = preds > buy_entry
+    exits = preds < buy_exit
 
-    # Hold duration = k_steps candles
-    exits = entries.vbt.signals.fshift(k_steps)
-    short_exits = short_entries.vbt.signals.fshift(k_steps)
+    short_entries = preds < sell_entry
+    short_exits = preds > sell_exit
 
     pf = vbt.Portfolio.from_signals(
         price,
@@ -146,10 +148,12 @@ def run_backtest_with_threshold(threshold_x=0.002, predictions_data=None, k_step
         "price": price,
         "preds": preds,
         "test_indices": test_indices,
-        "threshold_x": threshold_x,
-        "buy_threshold": buy_threshold,
-        "sell_threshold": sell_threshold,
-        "k_steps": k_steps
+        "x_entry": x_entry,
+        "x_exit": x_exit,
+        "buy_entry": buy_entry,
+        "buy_exit": buy_exit,
+        "sell_entry": sell_entry,
+        "sell_exit": sell_exit
     }
 
 def simulate_backtest(params=None):
@@ -158,15 +162,16 @@ def simulate_backtest(params=None):
     """
     if params is None:
         params = {}
-    threshold_x = params.get('threshold_x', 0.002)
+    x_entry = params.get('x_entry', DEFAULT_X_ENTRY)
+    x_exit = params.get('x_exit', DEFAULT_X_EXIT)
     predictions_data = get_or_compute_predictions(params=params, force_recompute=True)
     if predictions_data is None:
         return None
-    return run_backtest_with_threshold(threshold_x=threshold_x, predictions_data=predictions_data)
+    return run_backtest_with_threshold(x_entry=x_entry, x_exit=x_exit, predictions_data=predictions_data)
 
 def plot_backtest_results(results, fig=None, ax1=None, ax2=None, ax3=None):
     """
-    Plots Price with buy/sell signals, the Model Oscillator with 1±x thresholds,
+    Plots Price with buy/sell signals, the Model Oscillator with entry/exit thresholds,
     and the Portfolio Equity curve.
     """
     if not results:
@@ -175,9 +180,12 @@ def plot_backtest_results(results, fig=None, ax1=None, ax2=None, ax3=None):
     pf = results["portfolio"]
     initial_capital = results["initial_capital"]
     preds_series = results.get("preds", None)
-    threshold_x = results.get("threshold_x", 0.002)
-    buy_threshold = results.get("buy_threshold", 1.0 + threshold_x)
-    sell_threshold = results.get("sell_threshold", 1.0 - threshold_x)
+    x_entry = results.get("x_entry", DEFAULT_X_ENTRY)
+    x_exit = results.get("x_exit", DEFAULT_X_EXIT)
+    buy_entry = results.get("buy_entry", 1.0 + x_entry)
+    buy_exit = results.get("buy_exit", 1.0 + x_exit)
+    sell_entry = results.get("sell_entry", 1.0 - x_entry)
+    sell_exit = results.get("sell_exit", 1.0 - x_exit)
     
     if fig is None:
         fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(16, 12), gridspec_kw={'height_ratios': [2.5, 1.2, 1.2]}, sharex=True)
@@ -209,25 +217,27 @@ def plot_backtest_results(results, fig=None, ax1=None, ax2=None, ax3=None):
         short_mask = direction == 'Short'
         
         if long_mask.any():
-            ax1.scatter(entries_idx[long_mask], entry_prices[long_mask], label='Buy Long (> 1+x)', marker='^', color='#4caf50', s=90, zorder=5)
-            ax1.scatter(exit_idx[long_mask], exit_prices[long_mask], label='Exit Long', marker='x', color='#81c784', s=70, zorder=5)
+            ax1.scatter(entries_idx[long_mask], entry_prices[long_mask], label=f'Buy Long (> {buy_entry:.3f})', marker='^', color='#4caf50', s=90, zorder=5)
+            ax1.scatter(exit_idx[long_mask], exit_prices[long_mask], label=f'Exit Long (< {buy_exit:.3f})', marker='x', color='#81c784', s=70, zorder=5)
             
         if short_mask.any():
-            ax1.scatter(entries_idx[short_mask], entry_prices[short_mask], label='Sell Short (< 1-x)', marker='v', color='#f44336', s=90, zorder=5)
-            ax1.scatter(exit_idx[short_mask], exit_prices[short_mask], label='Exit Short', marker='x', color='#e57373', s=70, zorder=5)
+            ax1.scatter(entries_idx[short_mask], entry_prices[short_mask], label=f'Sell Short (< {sell_entry:.3f})', marker='v', color='#f44336', s=90, zorder=5)
+            ax1.scatter(exit_idx[short_mask], exit_prices[short_mask], label=f'Exit Short (> {sell_exit:.3f})', marker='x', color='#e57373', s=70, zorder=5)
             
-    ax1.set_title(f'Market Price & Trade Executions (Threshold x = ±{threshold_x:.4f} | Total Trades: {trades.count()})', fontsize=12)
+    ax1.set_title(f'Market Price & Trade Executions (Entry x={x_entry:.3f}, Exit x={x_exit:.3f} | Total Trades: {trades.count()})', fontsize=12)
     ax1.set_ylabel('Price (USD)', fontsize=10)
     ax1.legend(loc='upper left', fontsize=9)
     ax1.grid(True, alpha=0.3)
     
-    # --- 2. Model Oscillator with 1±x Thresholds ---
+    # --- 2. Model Oscillator with 1±x_entry and 1±x_exit Thresholds ---
     if ax3 is not None and preds_series is not None:
-        ax2.plot(test_indices, preds_series.values, label='Model Oscillator Output', color='#00d2ff', linewidth=1.0)
-        ax2.axhline(1.0, color='#888888', linestyle=':', label='Neutral (1.0)', alpha=0.7)
-        ax2.axhline(buy_threshold, color='#4caf50', linestyle='--', label=f'Buy Level (1+x = {buy_threshold:.4f})', alpha=0.9)
-        ax2.axhline(sell_threshold, color='#f44336', linestyle='--', label=f'Sell Level (1-x = {sell_threshold:.4f})', alpha=0.9)
-        ax2.set_title(f'128-Candle Oscillator Output with Thresholds x = ±{threshold_x:.4f}', fontsize=11)
+        ax2.plot(test_indices, preds_series.values, label='Model Output Oscillator', color='#00d2ff', linewidth=1.0)
+        ax2.axhline(buy_entry, color='#4caf50', linestyle='--', label=f'Buy Entry (1+x_in = {buy_entry:.4f})', alpha=0.9)
+        ax2.axhline(buy_exit, color='#81c784', linestyle=':', label=f'Buy Exit (1+x_out = {buy_exit:.4f})', alpha=0.9)
+        ax2.axhline(1.0, color='#888888', linestyle=':', label='Neutral (1.0)', alpha=0.6)
+        ax2.axhline(sell_exit, color='#e57373', linestyle=':', label=f'Sell Exit (1-x_out = {sell_exit:.4f})', alpha=0.9)
+        ax2.axhline(sell_entry, color='#f44336', linestyle='--', label=f'Sell Entry (1-x_in = {sell_entry:.4f})', alpha=0.9)
+        ax2.set_title(f'128-Candle Oscillator with Entry/Exit Hysteresis Bands (x_in={x_entry:.3f}, x_out={x_exit:.3f})', fontsize=11)
         ax2.set_ylabel('Output', fontsize=10)
         ax2.legend(loc='upper left', fontsize=8)
         ax2.grid(True, alpha=0.3)
@@ -251,5 +261,5 @@ def plot_backtest_results(results, fig=None, ax1=None, ax2=None, ax3=None):
     final_value = portfolio_value[-1]
     returns = (final_value - initial_capital) / initial_capital * 100
     winrate = pf.trades.win_rate() * 100 if trades.count() > 0 else 0.0
-    print(f"\n--- Backtest Results (x={threshold_x:.4f}) ---")
+    print(f"\n--- Backtest Results (x_entry={x_entry:.4f}, x_exit={x_exit:.4f}) ---")
     print(f"Total Return: {returns:.2f}% | Win Rate: {winrate:.2f}% | Max Drawdown: {pf.max_drawdown() * 100:.2f}% | Trades: {trades.count()}")

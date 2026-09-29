@@ -62,38 +62,47 @@ class App(tk.Tk):
         self.train_button = ttk.Button(left_panel, text="▶ START TRAINING", command=self.run_training)
         self.train_button.pack(fill=tk.X, pady=(15, 10))
 
-        # --- Section 2: Fast Oscillator Strategy (Threshold x) ---
+        # --- Section 2: Fast Oscillator Strategy (Dual Thresholds: Entry & Exit) ---
         sep = ttk.Separator(left_panel, orient='horizontal')
         sep.pack(fill=tk.X, pady=15)
 
-        strat_lbl = ttk.Label(left_panel, text="Oscillator Threshold (x)", style="SubHeader.TLabel")
+        strat_lbl = ttk.Label(left_panel, text="Dual-Threshold Strategy", style="SubHeader.TLabel")
         strat_lbl.pack(pady=(0, 5), anchor=tk.W)
 
         desc_lbl = ttk.Label(
             left_panel, 
-            text="Buy when Output > 1 + x\nSell when Output < 1 - x\nRecalculates instantly without retraining.",
+            text="Long: Buy > 1+x_in  | Exit < 1+x_out\nShort: Sell < 1-x_in | Exit > 1-x_out\nRecalculates instantly without retraining.",
             font=("Segoe UI", 9),
             foreground="#aaaaaa"
         )
-        desc_lbl.pack(pady=(0, 10), anchor=tk.W)
+        desc_lbl.pack(pady=(0, 8), anchor=tk.W)
 
-        self.threshold_x_var = tk.StringVar(value="0.005")
-        self.create_input_field(left_panel, "Threshold x (e.g. 0.005 = 0.5%):", self.threshold_x_var)
+        self.x_entry_var = tk.StringVar(value="0.01")
+        self.x_exit_var = tk.StringVar(value="0.005")
 
-        # Quick preset buttons for convenience
-        preset_frame = ttk.Frame(left_panel)
-        preset_frame.pack(fill=tk.X, pady=5)
-        ttk.Button(preset_frame, text="0.001", width=6, command=lambda: self.set_threshold("0.001")).pack(side=tk.LEFT, padx=2)
-        ttk.Button(preset_frame, text="0.002", width=6, command=lambda: self.set_threshold("0.002")).pack(side=tk.LEFT, padx=2)
-        ttk.Button(preset_frame, text="0.005", width=6, command=lambda: self.set_threshold("0.005")).pack(side=tk.LEFT, padx=2)
-        ttk.Button(preset_frame, text="0.010", width=6, command=lambda: self.set_threshold("0.010")).pack(side=tk.LEFT, padx=2)
+        self.create_input_field(left_panel, "Entry Threshold x_in (e.g. 0.01 = 1%):", self.x_entry_var)
+        self.create_input_field(left_panel, "Exit Threshold x_out (e.g. 0.005 = 0.5%):", self.x_exit_var)
+
+        # Quick preset buttons
+        preset_lbl = ttk.Label(left_panel, text="Quick Presets (Entry / Exit):", font=("Segoe UI", 9), foreground="#aaaaaa")
+        preset_lbl.pack(pady=(6, 2), anchor=tk.W)
+
+        preset_frame1 = ttk.Frame(left_panel)
+        preset_frame1.pack(fill=tk.X, pady=2)
+        ttk.Button(preset_frame1, text="0.01 / 0.005", width=12, command=lambda: self.set_thresholds("0.01", "0.005")).pack(side=tk.LEFT, padx=2)
+        ttk.Button(preset_frame1, text="0.008 / 0.003", width=12, command=lambda: self.set_thresholds("0.008", "0.003")).pack(side=tk.LEFT, padx=2)
+
+        preset_frame2 = ttk.Frame(left_panel)
+        preset_frame2.pack(fill=tk.X, pady=2)
+        ttk.Button(preset_frame2, text="0.015 / 0.008", width=12, command=lambda: self.set_thresholds("0.015", "0.008")).pack(side=tk.LEFT, padx=2)
+        ttk.Button(preset_frame2, text="0.02 / 0.01", width=12, command=lambda: self.set_thresholds("0.02", "0.01")).pack(side=tk.LEFT, padx=2)
 
         self.recalc_button = ttk.Button(
             left_panel, 
             text="⚡ RECALCULATE BACKTEST", 
             command=self.run_recalculate_backtest
         )
-        self.recalc_button.pack(fill=tk.X, pady=(10, 10))
+        self.recalc_button.pack(fill=tk.X, pady=(12, 10))
         
         # --- Top Header & Metrics Bar (Right Panel) ---
         header_frame = ttk.Frame(right_panel)
@@ -149,8 +158,9 @@ class App(tk.Tk):
         entry = ttk.Entry(frame, textvariable=var, font=("Segoe UI", 10))
         entry.pack(side=tk.TOP, fill=tk.X)
 
-    def set_threshold(self, val_str):
-        self.threshold_x_var.set(val_str)
+    def set_thresholds(self, in_val_str, out_val_str):
+        self.x_entry_var.set(in_val_str)
+        self.x_exit_var.set(out_val_str)
         self.run_recalculate_backtest()
 
     def run_training(self):
@@ -168,7 +178,8 @@ class App(tk.Tk):
                 'n_steps': int(self.n_steps_var.get()),
                 'k_steps': int(self.k_steps_var.get()),
                 'days_to_load': int(self.days_var.get()),
-                'threshold_x': float(self.threshold_x_var.get())
+                'x_entry': float(self.x_entry_var.get()),
+                'x_exit': float(self.x_exit_var.get())
             }
         except ValueError:
             print("Invalid input parameters. Please check values.")
@@ -190,18 +201,19 @@ class App(tk.Tk):
 
     def run_recalculate_backtest(self):
         """
-        Recalculates the backtest instantly using cached predictions for threshold x.
+        Recalculates the backtest instantly using cached predictions for x_entry and x_exit.
         Does NOT re-train the model.
         """
         try:
-            x = float(self.threshold_x_var.get())
+            x_in = float(self.x_entry_var.get())
+            x_out = float(self.x_exit_var.get())
         except ValueError:
-            print("Invalid threshold x. Please enter a decimal number like 0.005.")
+            print("Invalid thresholds. Please enter decimal numbers like 0.01 and 0.005.")
             return
 
-        print(f"Recalculating backtest with threshold x={x:.4f}...")
+        print(f"Recalculating backtest with x_entry={x_in:.4f}, x_exit={x_out:.4f}...")
         try:
-            results = run_backtest_with_threshold(threshold_x=x)
+            results = run_backtest_with_threshold(x_entry=x_in, x_exit=x_out)
             if results:
                 self.update_backtest_ui(results)
             else:
@@ -238,8 +250,9 @@ class App(tk.Tk):
         """Loads and displays existing cached backtest on startup if available."""
         if os.path.exists("data/cached/model_predictions.pkl") or os.path.exists("best_model.keras"):
             try:
-                x = float(self.threshold_x_var.get())
-                results = run_backtest_with_threshold(threshold_x=x)
+                x_in = float(self.x_entry_var.get())
+                x_out = float(self.x_exit_var.get())
+                results = run_backtest_with_threshold(x_entry=x_in, x_exit=x_out)
                 if results:
                     self.update_backtest_ui(results)
             except Exception as e:
