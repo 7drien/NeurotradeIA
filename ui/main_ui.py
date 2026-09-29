@@ -50,17 +50,21 @@ class App(tk.Tk):
         self.epochs_var = tk.StringVar(value="50")
         self.batch_size_var = tk.StringVar(value="32")
         self.n_steps_var = tk.StringVar(value="128")
-        self.k_steps_var = tk.StringVar(value="16")
+        self.k_steps_var = tk.StringVar(value="32")
         self.days_var = tk.StringVar(value="700")
         
         self.create_input_field(left_panel, "Epochs:", self.epochs_var)
         self.create_input_field(left_panel, "Batch Size:", self.batch_size_var)
         self.create_input_field(left_panel, "Sequence (128 Candles):", self.n_steps_var)
-        self.create_input_field(left_panel, "Horizon (16 Candles):", self.k_steps_var)
+        self.create_input_field(left_panel, "Prediction Horizon (32 Candles):", self.k_steps_var)
         self.create_input_field(left_panel, "Days to Load:", self.days_var)
         
+        self.early_stopping_var = tk.BooleanVar(value=False)
+        self.es_check = ttk.Checkbutton(left_panel, text="Enable Early Stopping", variable=self.early_stopping_var)
+        self.es_check.pack(anchor=tk.W, pady=(4, 8))
+        
         self.train_button = ttk.Button(left_panel, text="▶ START TRAINING", command=self.run_training)
-        self.train_button.pack(fill=tk.X, pady=(15, 10))
+        self.train_button.pack(fill=tk.X, pady=(10, 10))
 
         # --- Section 2: Fast Oscillator Strategy (Dual Thresholds: Entry & Exit) ---
         sep = ttk.Separator(left_panel, orient='horizontal')
@@ -178,6 +182,7 @@ class App(tk.Tk):
                 'n_steps': int(self.n_steps_var.get()),
                 'k_steps': int(self.k_steps_var.get()),
                 'days_to_load': int(self.days_var.get()),
+                'early_stopping': self.early_stopping_var.get(),
                 'x_entry': float(self.x_entry_var.get()),
                 'x_exit': float(self.x_exit_var.get())
             }
