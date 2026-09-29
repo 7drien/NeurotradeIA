@@ -73,21 +73,21 @@ To preserve physical market relationships and avoid lookahead bias, each 128-can
 
 ### 🎯 Target & Prediction Horizon
 
-* **Horizon**: $K = 16$ candles into the future.
+* **Horizon**: $K = 32$ candles into the future (configurable).
 * **Target Ratio**:
-  $$y = \frac{Close_{t + 16}}{Close_t}$$
+  $$y = \frac{Close_{t + 32}}{Close_t}$$
   where $t$ is the index of the 128th candle (the present moment).
 * **Target Interpretation**:
   * $y = 1.0$: Price remains unchanged (100% of current price).
-  * $y > 1.0$: Price increases over the next 16 candles (up to 200%).
-  * $y < 1.0$: Price decreases over the next 16 candles (down to 0%).
+  * $y > 1.0$: Price increases over the next 32 candles (up to 200%).
+  * $y < 1.0$: Price decreases over the next 32 candles (down to 0%).
 * **Zero Data Leakage**: By normalizing each segment independently and anchoring the target ratio strictly to the 128th candle, the model has no prior exposure to future candles.
 
 ---
 
 ### ⚡ 128-Candle Oscillator Strategy & Fast Backtesting
 
-The trained neural network acts as a **128-candle forward oscillator** predicting relative price momentum over the next 16 candles. Positions are managed dynamically using **dual hysteresis thresholds** (no fixed 16-candle exit):
+The trained neural network acts as a **128-candle forward oscillator** predicting relative price momentum over the next 32 candles. Positions are managed dynamically using **dual hysteresis thresholds** (no fixed exit duration):
 
 1. **Dual Threshold Trading Signals**:
    * **BUY (Long Entry)**: Triggered when model output $\hat{y} > 1 + x_{\text{entry}}$ (Default: $x_{\text{entry}} = 0.010 \implies \hat{y} > 1.010$).
