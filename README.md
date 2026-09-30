@@ -1,8 +1,12 @@
 # NeurotradeIA: Deep Learning Model for Price Ratio Prediction
 
+<p align="center">
+  <img src="NeurotradeIA_UI_github.png" alt="NeurotradeIA UI Dashboard" width="100%" />
+</p>
+
 > **⚠️ Disclaimer**: This project is intended purely for educational purposes, quantitative research, and experimentation. It does not constitute financial advice, and the models or strategies developed here should not be used for live trading with real capital.
 
-NeurotradeIA is a quantitative trading and deep learning framework designed to predict future asset price movements using a multi-layer perceptron (MLP) with sequence-normalized market features. The model processes 128 consecutive candles and forecasts the price ratio **16 candles ahead** relative to the current candle.
+NeurotradeIA is a quantitative trading and deep learning framework designed to predict future asset price movements using a multi-layer perceptron (MLP) with sequence-normalized market features. The model processes 128 consecutive candles and forecasts the price ratio **32 candles ahead** relative to the current candle.
 
 ---
 
