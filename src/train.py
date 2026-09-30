@@ -10,7 +10,7 @@ from src.preprocessing import create_sequences
 from src.model import create_dense_model, two_sigmoid, directional_accuracy
 from src.callbacks import UILoggerCallback, BacktestOnEpochEnd
 import src.config as config
-from src.config import TICKER, INTERVAL, N_STEPS, K_STEPS, EPOCHS, BATCH_SIZE
+from src.config import TICKER, INTERVAL, N_STEPS, K_STEPS, EPOCHS, BATCH_SIZE, LEARNING_RATE
 
 def train_model_with_callback(queue, params=None):
     """
@@ -26,8 +26,9 @@ def train_model_with_callback(queue, params=None):
     n_steps = params.get('n_steps', N_STEPS)
     k_steps = params.get('k_steps', K_STEPS)
     days_to_load = params.get('days_to_load', None)
+    learning_rate = params.get('learning_rate', LEARNING_RATE)
     
-    print(f"Starting training process: Epochs={epochs}, Batch={batch_size}, N_Steps={n_steps}, K_Steps={k_steps}")
+    print(f"Starting training process: Epochs={epochs}, Batch={batch_size}, N_Steps={n_steps}, K_Steps={k_steps}, Days={days_to_load}, LR={learning_rate}")
     
     start_date_str = config.START_DATE_STR
     if days_to_load is not None:
@@ -63,7 +64,7 @@ def train_model_with_callback(queue, params=None):
     print(f"y_train statistics: Mean={np.mean(y_train):.4f}, Min={np.min(y_train):.4f}, Max={np.max(y_train):.4f}")
 
     # Create 4-layer MLP model: 1024 -> 256 -> 64 -> 16 -> 8 -> 1 (2*sigmoid)
-    model = create_dense_model(input_dim=X_train.shape[1])
+    model = create_dense_model(input_dim=X_train.shape[1], lr=learning_rate)
     model.summary()
 
     # Callbacks

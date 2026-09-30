@@ -49,12 +49,14 @@ class App(tk.Tk):
         
         self.epochs_var = tk.StringVar(value="50")
         self.batch_size_var = tk.StringVar(value="32")
+        self.lr_var = tk.StringVar(value="0.01")
         self.n_steps_var = tk.StringVar(value="128")
         self.k_steps_var = tk.StringVar(value="32")
         self.days_var = tk.StringVar(value="700")
         
         self.create_input_field(left_panel, "Epochs:", self.epochs_var)
         self.create_input_field(left_panel, "Batch Size:", self.batch_size_var)
+        self.create_input_field(left_panel, "Learning Rate:", self.lr_var)
         self.create_input_field(left_panel, "Sequence (128 Candles):", self.n_steps_var)
         self.create_input_field(left_panel, "Prediction Horizon (32 Candles):", self.k_steps_var)
         self.create_input_field(left_panel, "Days to Load:", self.days_var)
@@ -179,6 +181,7 @@ class App(tk.Tk):
             params = {
                 'epochs': int(self.epochs_var.get()),
                 'batch_size': int(self.batch_size_var.get()),
+                'learning_rate': float(self.lr_var.get()),
                 'n_steps': int(self.n_steps_var.get()),
                 'k_steps': int(self.k_steps_var.get()),
                 'days_to_load': int(self.days_var.get()),

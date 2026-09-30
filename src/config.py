@@ -26,6 +26,7 @@ MAX_HOLDING_PERIOD = 32           # Backward compatibility
 # --- Model parameters ---
 EPOCHS = 50
 BATCH_SIZE = 32
+LEARNING_RATE = 0.01 # Increased learning rate (was 0.005)
 
 # --- Backtesting parameters ---
 INITIAL_CAPITAL = 10000.0

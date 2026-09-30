@@ -74,6 +74,12 @@ def get_data(ticker=TICKER, start_date=START_DATE_STR, end_date=END_DATE_STR, in
             data = pd.read_pickle(cache_file)
             data = _validate_dataframe(data)
             if not data.empty:
+                if start_date:
+                    start_ts = pd.to_datetime(start_date, utc=True)
+                    data = data.loc[data.index >= start_ts]
+                if end_date:
+                    end_ts = pd.to_datetime(end_date, utc=True)
+                    data = data.loc[data.index <= end_ts]
                 return data
         except Exception as e:
             print(f"Could not read cache file: {e}. Re-downloading...")
