@@ -183,7 +183,7 @@ python main.py
 
 ## 📍 Key Methodological Highlights
 
-* **Intra-Sequence Invariance**: Prices are normalized per 128-candle sequence with shared mean and standard deviation, avoiding data leakage across sliding windows and ensuring high generalization.
+* **Intra-Sequence Invariance**: Prices are normalized per 256-candle sequence with shared mean and standard deviation, avoiding data leakage across sliding windows and ensuring high generalization.
 * **Bounded Target Space**: The $2 \cdot \sigma(x)$ output naturally covers $(0, 2)$, preventing extreme gradient explosions common in unbounded price regression.
 * **Strict Chronological Splitting**: Training and validation sets are strictly ordered in time ($80\%$ train, $20\%$ validation) without random shuffling.
 
