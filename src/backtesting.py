@@ -297,7 +297,7 @@ def plot_backtest_results(results, fig=None, ax1=None, ax2=None, ax3=None):
         ax2.axhline(1.0, color='#64748b', linestyle=':', label='Neutral (1.0)', alpha=0.6)
         ax2.axhline(sell_exit, color='#f87171', linestyle=':', label=f'Sell Exit ({sell_exit:.4f})', alpha=0.9)
         ax2.axhline(sell_entry, color='#ef4444', linestyle='--', label=f'Sell Entry ({sell_entry:.4f})', alpha=0.9)
-        ax2.set_title(f'128-Candle Oscillator with Hysteresis Bands (x_in={x_entry:.3f}, x_out={x_exit:.3f})', fontsize=11, color='#f1f5f9', fontweight='bold')
+        ax2.set_title(f'Oscillator with Hysteresis Bands (x_in={x_entry:.3f}, x_out={x_exit:.3f})', fontsize=11, color='#f1f5f9', fontweight='bold')
         ax2.set_ylabel('Output', fontsize=9, color='#94a3b8')
         ax2.legend(loc='upper left', fontsize=8, facecolor='#181b24', edgecolor='#262b3a', labelcolor='#e2e8f0')
         equity_ax = ax3
