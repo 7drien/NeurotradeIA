@@ -11,3 +11,14 @@ curl_cffi==0.6.0
 gymnasium
 stable-baselines3[extra]
 tensorboard
+vectorbt
+
+# NVIDIA CUDA 12 packages for GPU acceleration with TensorFlow
+nvidia-cuda-runtime-cu12
+nvidia-cublas-cu12
+nvidia-cufft-cu12
+nvidia-curand-cu12
+nvidia-cusolver-cu12
+nvidia-cusparse-cu12
+nvidia-cudnn-cu12
+nvidia-cuda-nvcc-cu12

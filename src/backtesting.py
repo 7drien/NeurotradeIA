@@ -7,7 +7,7 @@ from tensorflow.keras.models import load_model
 
 from src.data_loader import get_data
 from src.features import add_advanced_features
-from src.preprocessing import create_sequences
+from src.preprocessing import create_sequences, create_train_test_split
 from src.model import two_sigmoid, directional_accuracy, opportunity_cost_loss
 from src.config import (
     TICKER, INTERVAL, N_STEPS, K_STEPS,
@@ -19,15 +19,16 @@ from src.config import (
 PREDICTIONS_CACHE_FILE = "data/cached/model_predictions.pkl"
 _CACHED_PREDICTIONS = None
 
-def get_or_compute_predictions(params=None, force_recompute=False):
+def get_or_compute_predictions(params=None, force_recompute=False, model=None, test_data=None):
     """
     Retrieves or calculates model predictions for each candle.
     Saves outputs to disk (data/cached/model_predictions.pkl) so backtests can be
     recalculated with different thresholds instantaneously without retraining.
+    Can use an in-memory model and precomputed test_data slice to avoid redundant data reloading.
     """
     global _CACHED_PREDICTIONS
     
-    if not force_recompute:
+    if not force_recompute and model is None and test_data is None:
         if _CACHED_PREDICTIONS is not None:
             return _CACHED_PREDICTIONS
         if os.path.exists(PREDICTIONS_CACHE_FILE):
@@ -38,56 +39,61 @@ def get_or_compute_predictions(params=None, force_recompute=False):
             except Exception as e:
                 print(f"Could not read cached predictions: {e}. Recomputing...")
 
-    if params is None:
-        params = {}
-    n_steps = params.get('n_steps', N_STEPS)
-    k_steps = params.get('k_steps', K_STEPS)
-    days_to_load = params.get('days_to_load', None)
-    
-    start_date_str = START_DATE_STR
-    if days_to_load is not None:
-        start_date = datetime.datetime.now() - datetime.timedelta(days=days_to_load)
-        start_date_str = start_date.strftime('%Y-%m-%d')
+    if test_data is not None:
+        X_test = test_data['X_test']
+        price = test_data['price']
+        test_indices = test_data['test_indices']
+        y_true = test_data.get('y_true', None)
+        n_steps = test_data.get('n_steps', N_STEPS)
+        k_steps = test_data.get('k_steps', K_STEPS)
+    else:
+        if params is None:
+            params = {}
+        n_steps = params.get('n_steps', N_STEPS)
+        k_steps = params.get('k_steps', K_STEPS)
+        days_to_load = params.get('days_to_load', None)
         
-    data = get_data(ticker=TICKER, interval=INTERVAL, start_date=start_date_str)
-    if data.empty:
-        return None
+        start_date_str = START_DATE_STR
+        if days_to_load is not None:
+            start_date = datetime.datetime.now() - datetime.timedelta(days=days_to_load)
+            start_date_str = start_date.strftime('%Y-%m-%d')
+            
+        data = get_data(ticker=TICKER, interval=INTERVAL, start_date=start_date_str)
+        if data.empty:
+            return None
 
-    df_processed = add_advanced_features(data.copy())
-    X, y_true = create_sequences(df_processed, n_steps=n_steps, k_steps=k_steps)
-    if len(X) == 0:
-        return None
+        df_processed = add_advanced_features(data.copy())
+        _, _, _, _, test_info = create_train_test_split(
+            df_processed, n_steps=n_steps, k_steps=k_steps, train_ratio=0.8
+        )
+        X_test = test_info['X_test']
+        test_indices = test_info['test_indices']
+        price = test_info['price']
+        y_true = None
 
-    print("Loading best model for inference...")
-    try:
-        custom_objects = {
-            'two_sigmoid': two_sigmoid,
-            'directional_accuracy': directional_accuracy,
-            'opportunity_cost_loss': opportunity_cost_loss
-        }
-        model = load_model('best_model.keras', custom_objects=custom_objects)
-    except Exception as e:
-        print(f"Backtesting failed: Model file could not be loaded ({e})")
-        return None
+    if model is None:
+        print("Loading best model for inference...")
+        try:
+            custom_objects = {
+                'two_sigmoid': two_sigmoid,
+                'directional_accuracy': directional_accuracy,
+                'opportunity_cost_loss': opportunity_cost_loss
+            }
+            model = load_model('best_model.keras', custom_objects=custom_objects)
+        except Exception as e:
+            print(f"Backtesting failed: Model file could not be loaded ({e})")
+            return None
 
-    train_size = int(len(X) * 0.8)
-    X_test = X[train_size:]
-    
-    test_start_index = train_size + n_steps - 1
-    end_slice = test_start_index + len(X_test)
-    test_indices = df_processed.index[test_start_index:end_slice]
-    
-    print(f"Computing model output oscillator for {len(X_test)} candles...")
+    print(f"Computing model output oscillator for {len(X_test)} candles (20% end of BTC-USD)...")
     preds = model.predict(X_test, verbose=0).flatten()
 
-    price = df_processed['Close'].loc[test_indices]
     pred_series = pd.Series(preds, index=test_indices)
 
     cache_data = {
         "price": price,
         "preds": pred_series,
         "test_indices": test_indices,
-        "y_true": y_true[train_size:],
+        "y_true": y_true,
         "n_steps": n_steps,
         "k_steps": k_steps
     }
@@ -141,6 +147,23 @@ def run_backtest_with_threshold(x_entry=DEFAULT_X_ENTRY, x_exit=DEFAULT_X_EXIT, 
         init_cash=INITIAL_CAPITAL,
         freq='1h'
     )
+
+    # Compute key performance statistics
+    def _safe_float(val, default=0.0):
+        try:
+            f = float(val)
+            return default if (np.isnan(f) or np.isinf(f)) else f
+        except Exception:
+            return default
+
+    final_val = float(pf.value().iloc[-1])
+    ret = _safe_float((final_val - INITIAL_CAPITAL) / INITIAL_CAPITAL * 100.0)
+    bh_ret = _safe_float((price.iloc[-1] - price.iloc[0]) / price.iloc[0] * 100.0)
+    sharpe = _safe_float(pf.sharpe_ratio())
+    max_dd = _safe_float(pf.max_drawdown() * 100.0)
+    total_trades = int(pf.trades.count())
+    winrate = _safe_float(pf.trades.win_rate() * 100.0) if total_trades > 0 else 0.0
+    profit_factor = _safe_float(pf.trades.profit_factor()) if total_trades > 0 else 0.0
     
     return {
         "portfolio": pf,
@@ -153,18 +176,30 @@ def run_backtest_with_threshold(x_entry=DEFAULT_X_ENTRY, x_exit=DEFAULT_X_EXIT, 
         "buy_entry": buy_entry,
         "buy_exit": buy_exit,
         "sell_entry": sell_entry,
-        "sell_exit": sell_exit
+        "sell_exit": sell_exit,
+        "returns": ret,
+        "bh_return": bh_ret,
+        "sharpe_ratio": sharpe,
+        "max_drawdown": max_dd,
+        "win_rate": winrate,
+        "total_trades": total_trades,
+        "profit_factor": profit_factor,
     }
 
-def simulate_backtest(params=None):
+def simulate_backtest(params=None, model=None, test_data=None):
     """
-    Executes backtest with latest model checkpoint (called during training or manually).
+    Executes backtest with current model (or checkpoint) on the 20% test slice of BTC-USD.
     """
     if params is None:
         params = {}
     x_entry = params.get('x_entry', DEFAULT_X_ENTRY)
     x_exit = params.get('x_exit', DEFAULT_X_EXIT)
-    predictions_data = get_or_compute_predictions(params=params, force_recompute=True)
+    predictions_data = get_or_compute_predictions(
+        params=params, 
+        force_recompute=True, 
+        model=model, 
+        test_data=test_data
+    )
     if predictions_data is None:
         return None
     return run_backtest_with_threshold(x_entry=x_entry, x_exit=x_exit, predictions_data=predictions_data)
@@ -172,7 +207,7 @@ def simulate_backtest(params=None):
 def plot_backtest_results(results, fig=None, ax1=None, ax2=None, ax3=None):
     """
     Plots Price with buy/sell signals, the Model Oscillator with entry/exit thresholds,
-    and the Portfolio Equity curve.
+    and the Portfolio Equity curve with Buy & Hold comparison.
     """
     if not results:
         return
@@ -186,6 +221,13 @@ def plot_backtest_results(results, fig=None, ax1=None, ax2=None, ax3=None):
     buy_exit = results.get("buy_exit", 1.0 + x_exit)
     sell_entry = results.get("sell_entry", 1.0 - x_entry)
     sell_exit = results.get("sell_exit", 1.0 - x_exit)
+    
+    ret = results.get("returns", (pf.value().iloc[-1] - initial_capital) / initial_capital * 100.0)
+    bh_ret = results.get("bh_return", (results["price"].iloc[-1] - results["price"].iloc[0]) / results["price"].iloc[0] * 100.0)
+    sharpe = results.get("sharpe_ratio", 0.0)
+    max_dd = results.get("max_drawdown", 0.0)
+    winrate = results.get("win_rate", 0.0)
+    profit_factor = results.get("profit_factor", 0.0)
     
     if fig is None:
         fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(16, 12), gridspec_kw={'height_ratios': [2.5, 1.2, 1.2]}, sharex=True)
@@ -245,10 +287,13 @@ def plot_backtest_results(results, fig=None, ax1=None, ax2=None, ax3=None):
     else:
         equity_ax = ax2
 
-    # --- 3. Portfolio Equity Curve ---
-    equity_ax.plot(test_indices, portfolio_value, label='Portfolio Equity', color='#ab47bc', linewidth=1.4)
-    equity_ax.axhline(initial_capital, color='#888888', linestyle='--', label='Initial Capital', alpha=0.6)
-    equity_ax.set_title('Portfolio Equity Over Time', fontsize=11)
+    # --- 3. Portfolio Equity vs Buy & Hold Curve ---
+    bh_equity = (actual_prices / (actual_prices[0] + 1e-8)) * initial_capital
+
+    equity_ax.plot(test_indices, portfolio_value, label=f'Strategy Equity ({ret:+.2f}%)', color='#ab47bc', linewidth=1.5, zorder=3)
+    equity_ax.plot(test_indices, bh_equity, label=f'Buy & Hold BTC ({bh_ret:+.2f}%)', color='#f59e0b', linestyle='--', linewidth=1.2, alpha=0.85, zorder=2)
+    equity_ax.axhline(initial_capital, color='#888888', linestyle=':', label='Initial Capital', alpha=0.5, zorder=1)
+    equity_ax.set_title(f'Portfolio Equity vs Buy & Hold (Sharpe: {sharpe:.2f} | Max DD: {max_dd:.2f}%)', fontsize=11)
     equity_ax.set_ylabel('Equity (USD)', fontsize=10)
     equity_ax.set_xlabel('Date', fontsize=10)
     equity_ax.legend(loc='upper left', fontsize=8)
@@ -258,8 +303,6 @@ def plot_backtest_results(results, fig=None, ax1=None, ax2=None, ax3=None):
     if new_figure:
         plt.show()
     
-    final_value = portfolio_value[-1]
-    returns = (final_value - initial_capital) / initial_capital * 100
-    winrate = pf.trades.win_rate() * 100 if trades.count() > 0 else 0.0
     print(f"\n--- Backtest Results (x_entry={x_entry:.4f}, x_exit={x_exit:.4f}) ---")
-    print(f"Total Return: {returns:.2f}% | Win Rate: {winrate:.2f}% | Max Drawdown: {pf.max_drawdown() * 100:.2f}% | Trades: {trades.count()}")
+    print(f"Strategy Return: {ret:+.2f}% | Buy & Hold BTC: {bh_ret:+.2f}% | Sharpe: {sharpe:.2f}")
+    print(f"Win Rate: {winrate:.2f}% | Max Drawdown: {max_dd:.2f}% | Trades: {trades.count()} | Profit Factor: {profit_factor:.2f}")

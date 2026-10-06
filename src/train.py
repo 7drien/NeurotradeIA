@@ -6,7 +6,7 @@ from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLRO
 
 from src.data_loader import get_data
 from src.features import add_advanced_features
-from src.preprocessing import create_sequences
+from src.preprocessing import create_sequences, create_train_test_split
 from src.model import create_dense_model, two_sigmoid, directional_accuracy
 from src.callbacks import UILoggerCallback, BacktestOnEpochEnd
 import src.config as config
@@ -14,8 +14,8 @@ from src.config import TICKER, INTERVAL, N_STEPS, K_STEPS, EPOCHS, BATCH_SIZE, L
 
 def train_model_with_callback(queue, params=None):
     """
-    Trains the 4-layer MLP (256-64-16-8) with 1024-dimensional inputs and 2*sigmoid output.
-    Predicts the price ratio 16 candles ahead (Close[t+16] / Close[t]).
+    Trains the 6-layer MLP (1024-512-256-64-16-8) with 2048-dimensional inputs and 2*sigmoid output.
+    Predicts the price ratio k_steps candles ahead (Close[t+k_steps] / Close[t]).
     Accepts a dictionary of parameters from the UI to dynamically override configuration.
     """
     if params is None:
@@ -31,46 +31,82 @@ def train_model_with_callback(queue, params=None):
     print(f"Starting training process: Epochs={epochs}, Batch={batch_size}, N_Steps={n_steps}, K_Steps={k_steps}, Days={days_to_load}, LR={learning_rate}")
     
     start_date_str = config.START_DATE_STR
-    if days_to_load is not None:
-        start_date = datetime.datetime.now() - datetime.timedelta(days=days_to_load)
-        start_date_str = start_date.strftime('%Y-%m-%d')
-        
-    data = get_data(ticker=TICKER, interval=INTERVAL, start_date=start_date_str)
-    if data.empty:
+    tickers_config = params.get('tickers_config')
+    if tickers_config is None:
+        single_ticker = params.get('ticker')
+        if single_ticker:
+            tickers_config = {single_ticker: getattr(config, 'TICKER_START_DATES', {}).get(single_ticker, config.START_DATE_STR)}
+        else:
+            tickers_config = getattr(config, 'TICKER_START_DATES', {
+                'BTC-USD': '2016-01-01',
+                'ETH-USD': '2018-01-01'
+            })
+
+    X_train_list, y_train_list = [], []
+    X_val_list, y_val_list = [], []
+    btc_test_data = None
+
+    for tkr, default_start in tickers_config.items():
+        curr_start = default_start
+        if days_to_load is not None:
+            start_date = datetime.datetime.now() - datetime.timedelta(days=days_to_load)
+            curr_start = start_date.strftime('%Y-%m-%d')
+            
+        print(f"Loading data for {tkr} starting from {curr_start}...")
+        data = get_data(ticker=tkr, interval=INTERVAL, start_date=curr_start)
+        if data.empty:
+            print(f"Warning: No data retrieved for {tkr}.")
+            continue
+
+        print(f"Computing technical indicators for {tkr} ({len(data)} candles)...")
+        df_processed = add_advanced_features(data.copy())
+
+        print(f"Generating leak-free train/test split for {tkr} (80% train / 20% test)...")
+        X_tr, y_tr, X_v, y_v, test_info = create_train_test_split(
+            df_processed, n_steps=n_steps, k_steps=k_steps, train_ratio=0.8
+        )
+        if len(X_tr) == 0:
+            print(f"Warning: No training sequences created for {tkr}.")
+            continue
+
+        X_train_list.append(X_tr)
+        y_train_list.append(y_tr)
+        if len(X_v) > 0:
+            X_val_list.append(X_v)
+            y_val_list.append(y_v)
+
+        print(f"  -> {tkr}: {len(X_tr)} train samples (strictly before {test_info['split_date']}), {len(test_info['X_test'])} test candles")
+
+        if 'BTC' in tkr.upper() or btc_test_data is None:
+            btc_test_data = test_info
+            btc_test_data['ticker'] = tkr
+
+    if not X_train_list or not X_val_list:
+        print("Error: No training sequences created.")
         queue.put({'type': 'train_finished'})
         return
 
-    print("Computing technical indicators (RSI, Z-Score, Williams %R)...")
-    df_processed = add_advanced_features(data.copy())
+    X_train = np.vstack(X_train_list)
+    y_train = np.vstack(y_train_list)
+    X_val = np.vstack(X_val_list)
+    y_val = np.vstack(y_val_list)
 
-    print("Generating 1024-dimensional normalized input vectors and 16-candle target ratios...")
-    X, y = create_sequences(df_processed, n_steps=n_steps, k_steps=k_steps)
+    # Shuffle training set so mini-batches blend BTC and ETH samples
+    shuffle_idx = np.random.permutation(len(X_train))
+    X_train = X_train[shuffle_idx]
+    y_train = y_train[shuffle_idx]
 
-    if len(X) == 0:
-        print("Error: No sequences created.")
-        queue.put({'type': 'train_finished'})
-        return
-
-    print(f"Dataset generated: X shape = {X.shape}, y shape = {y.shape}")
-
-    # Strict chronological split: 80% train, 20% validation
-    X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, shuffle=False)
-
-    if len(X_train) == 0 or len(X_val) == 0:
-        queue.put({'type': 'train_finished'})
-        return
-
-    print(f"Training set: {len(X_train)} samples, Validation set: {len(X_val)} samples")
+    print(f"Combined dataset: Training={len(X_train)} samples, Validation={len(X_val)} samples")
     print(f"y_train statistics: Mean={np.mean(y_train):.4f}, Min={np.min(y_train):.4f}, Max={np.max(y_train):.4f}")
 
-    # Create 4-layer MLP model: 1024 -> 256 -> 64 -> 16 -> 8 -> 1 (2*sigmoid)
+    # Create MLP model: 2048 -> 1024 -> 512 -> 256 -> 64 -> 16 -> 8 -> 1 (2*sigmoid)
     model = create_dense_model(input_dim=X_train.shape[1], lr=learning_rate)
     model.summary()
 
     # Callbacks
     ui_callback = UILoggerCallback(queue)
     model_checkpoint = ModelCheckpoint('best_model.keras', monitor='val_loss', save_best_only=True, verbose=1)
-    backtest_callback = BacktestOnEpochEnd(queue, frequency=1, params=params)
+    backtest_callback = BacktestOnEpochEnd(queue, frequency=1, params=params, test_data=btc_test_data)
     reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=5, min_lr=0.00001, verbose=1)
 
     callbacks_list = [ui_callback, model_checkpoint, backtest_callback, reduce_lr]

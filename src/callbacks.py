@@ -22,27 +22,35 @@ class UILoggerCallback(Callback):
 
 class BacktestOnEpochEnd(Callback):
     """
-    A Keras callback to run a backtest at a specified frequency and send the
-    FULL results to the UI for plotting.
+    A Keras callback to calculate the model oscillator on the 20% test slice of BTC-USD
+    at a specified frequency and send the FULL backtest results to the UI for plotting.
     """
-    def __init__(self, queue, frequency=5, params=None):
+    def __init__(self, queue, frequency=1, params=None, test_data=None):
         super().__init__()
         self.queue = queue
         self.frequency = frequency
         self.params = params if params is not None else {}
+        self.test_data = test_data
 
     def on_epoch_end(self, epoch, logs=None):
         """
-        At the end of a specified epoch, run a backtest and send full results.
+        At the end of each specified epoch, run inference on the 20% test slice of BTC-USD
+        using the current model weights and send full results to the UI.
         """
         if (epoch + 1) % self.frequency == 0:
-            print(f"\n--- Running backtest for epoch {epoch + 1} ---")
+            print(f"\n--- Running backtest & indicator calculation for epoch {epoch + 1} ---")
             
-            # The model is saved by ModelCheckpoint, so simulate_backtest will load the best version.
-            backtest_results = simulate_backtest(params=self.params)
+            backtest_results = simulate_backtest(
+                params=self.params,
+                model=self.model,
+                test_data=self.test_data
+            )
             
             if backtest_results:
+                preds = backtest_results['preds']
+                print(f"Epoch {epoch + 1}: Indicator successfully computed on {len(preds)} test candles (20% end of BTC-USD). Predictions range: [{preds.min():.4f}, {preds.max():.4f}]")
+                backtest_results['epoch'] = epoch + 1
                 # Send the ENTIRE results dictionary to the UI
-                self.queue.put({'type': 'backtest_update', 'results': backtest_results})
+                self.queue.put({'type': 'backtest_update', 'results': backtest_results, 'epoch': epoch + 1})
             else:
                 print("Backtest simulation failed for this epoch.")

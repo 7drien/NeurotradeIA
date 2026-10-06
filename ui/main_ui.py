@@ -47,21 +47,21 @@ class App(tk.Tk):
         settings_lbl = ttk.Label(left_panel, text="Training Configuration", style="Header.TLabel")
         settings_lbl.pack(pady=(0, 15), anchor=tk.W)
         
-        self.epochs_var = tk.StringVar(value="50")
-        self.batch_size_var = tk.StringVar(value="32")
-        self.lr_var = tk.StringVar(value="0.01")
-        self.n_steps_var = tk.StringVar(value="128")
+        self.epochs_var = tk.StringVar(value="200")
+        self.batch_size_var = tk.StringVar(value="128")
+        self.lr_var = tk.StringVar(value="0.0003")
+        self.n_steps_var = tk.StringVar(value="256")
         self.k_steps_var = tk.StringVar(value="32")
-        self.days_var = tk.StringVar(value="700")
+        self.days_var = tk.StringVar(value="All")
         
         self.create_input_field(left_panel, "Epochs:", self.epochs_var)
         self.create_input_field(left_panel, "Batch Size:", self.batch_size_var)
         self.create_input_field(left_panel, "Learning Rate:", self.lr_var)
-        self.create_input_field(left_panel, "Sequence (128 Candles):", self.n_steps_var)
+        self.create_input_field(left_panel, "Sequence (256 Candles):", self.n_steps_var)
         self.create_input_field(left_panel, "Prediction Horizon (32 Candles):", self.k_steps_var)
-        self.create_input_field(left_panel, "Days to Load:", self.days_var)
+        self.create_input_field(left_panel, "Days to Load (or 'All'):", self.days_var)
         
-        self.early_stopping_var = tk.BooleanVar(value=False)
+        self.early_stopping_var = tk.BooleanVar(value=True)
         self.es_check = ttk.Checkbutton(left_panel, text="Enable Early Stopping", variable=self.early_stopping_var)
         self.es_check.pack(anchor=tk.W, pady=(4, 8))
         
@@ -83,8 +83,8 @@ class App(tk.Tk):
         )
         desc_lbl.pack(pady=(0, 8), anchor=tk.W)
 
-        self.x_entry_var = tk.StringVar(value="0.01")
-        self.x_exit_var = tk.StringVar(value="0.005")
+        self.x_entry_var = tk.StringVar(value="0.05")
+        self.x_exit_var = tk.StringVar(value="-0.02")
 
         self.create_input_field(left_panel, "Entry Threshold x_in (e.g. 0.01 = 1%):", self.x_entry_var)
         self.create_input_field(left_panel, "Exit Threshold x_out (e.g. 0.005 = 0.5%):", self.x_exit_var)
@@ -120,19 +120,28 @@ class App(tk.Tk):
         metrics_frame = ttk.Frame(right_panel)
         metrics_frame.pack(fill=tk.X, pady=5)
         
-        self.epoch_label = ttk.Label(metrics_frame, text="Epoch: N/A", font=("Segoe UI", 13, "bold"))
-        self.epoch_label.pack(side=tk.LEFT, padx=15)
+        self.epoch_label = ttk.Label(metrics_frame, text="Epoch: N/A", font=("Segoe UI", 11, "bold"))
+        self.epoch_label.pack(side=tk.LEFT, padx=10)
         
-        self.return_label = ttk.Label(metrics_frame, text="Return: 0.00%", font=("Segoe UI", 13, "bold"), foreground="#4caf50")
-        self.return_label.pack(side=tk.LEFT, padx=15)
+        self.return_label = ttk.Label(metrics_frame, text="Return: 0.00%", font=("Segoe UI", 11, "bold"), foreground="#4caf50")
+        self.return_label.pack(side=tk.LEFT, padx=10)
 
-        self.winrate_label = ttk.Label(metrics_frame, text="Win Rate: 0.00%", font=("Segoe UI", 13, "bold"), foreground="#4caf50")
-        self.winrate_label.pack(side=tk.LEFT, padx=15)
+        self.bh_label = ttk.Label(metrics_frame, text="Buy & Hold: 0.00%", font=("Segoe UI", 11, "bold"), foreground="#f59e0b")
+        self.bh_label.pack(side=tk.LEFT, padx=10)
 
-        self.trades_label = ttk.Label(metrics_frame, text="Trades: 0", font=("Segoe UI", 13, "bold"), foreground="#00d2ff")
-        self.trades_label.pack(side=tk.LEFT, padx=15)
+        self.sharpe_label = ttk.Label(metrics_frame, text="Sharpe: 0.00", font=("Segoe UI", 11, "bold"), foreground="#e040fb")
+        self.sharpe_label.pack(side=tk.LEFT, padx=10)
 
-        self.progress = ttk.Progressbar(metrics_frame, mode='indeterminate', length=180)
+        self.winrate_label = ttk.Label(metrics_frame, text="Win Rate: 0.00%", font=("Segoe UI", 11, "bold"), foreground="#00e676")
+        self.winrate_label.pack(side=tk.LEFT, padx=10)
+
+        self.trades_label = ttk.Label(metrics_frame, text="Trades: 0", font=("Segoe UI", 11, "bold"), foreground="#00d2ff")
+        self.trades_label.pack(side=tk.LEFT, padx=10)
+
+        self.max_dd_label = ttk.Label(metrics_frame, text="Max DD: 0.00%", font=("Segoe UI", 11, "bold"), foreground="#ff5252")
+        self.max_dd_label.pack(side=tk.LEFT, padx=10)
+
+        self.progress = ttk.Progressbar(metrics_frame, mode='indeterminate', length=120)
 
         # Plot area (3 Subplots: Price, Oscillator, Equity)
         plot_frame = tk.Frame(right_panel, bg="#1e1e1e")
@@ -178,13 +187,15 @@ class App(tk.Tk):
         print("Starting training process...")
         
         try:
+            days_str = self.days_var.get().strip()
+            days_to_load = int(days_str) if days_str.isdigit() and int(days_str) > 0 else None
             params = {
                 'epochs': int(self.epochs_var.get()),
                 'batch_size': int(self.batch_size_var.get()),
                 'learning_rate': float(self.lr_var.get()),
                 'n_steps': int(self.n_steps_var.get()),
                 'k_steps': int(self.k_steps_var.get()),
-                'days_to_load': int(self.days_var.get()),
+                'days_to_load': days_to_load,
                 'early_stopping': self.early_stopping_var.get(),
                 'x_entry': float(self.x_entry_var.get()),
                 'x_exit': float(self.x_exit_var.get())
@@ -253,15 +264,17 @@ class App(tk.Tk):
         )
         self.winrate_label.config(text=f"Win Rate: {winrate:.2f}%")
         self.trades_label.config(text=f"Trades: {total_trades}")
+        if 'epoch' in results:
+            self.epoch_label.config(text=f"Epoch: {results['epoch']}")
 
     def initial_load_backtest(self):
         """Loads and displays existing cached backtest on startup if available."""
-        if os.path.exists("data/cached/model_predictions.pkl") or os.path.exists("best_model.keras"):
+        if os.path.exists("data/cached/model_predictions.pkl"):
             try:
                 x_in = float(self.x_entry_var.get())
                 x_out = float(self.x_exit_var.get())
                 results = run_backtest_with_threshold(x_entry=x_in, x_exit=x_out)
-                if results:
+                if results and len(results.get('preds', [])) > 500:
                     self.update_backtest_ui(results)
             except Exception as e:
                 print(f"Initial backtest load skipped: {e}")
@@ -277,6 +290,9 @@ class App(tk.Tk):
                     results = message.get('results')
                     if results:
                         self.update_backtest_ui(results)
+                    epoch = message.get('epoch')
+                    if epoch is not None:
+                        self.epoch_label.config(text=f"Epoch: {epoch}")
     
                 elif msg_type == 'train_update':
                     epoch = message.get('epoch', 0) + 1

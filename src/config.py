@@ -1,22 +1,33 @@
 from datetime import datetime, timedelta
 
 # --- Data parameters ---
-TICKER = "BTC-USD"
+BTC_TICKER = "BTC-USD"
+ETH_TICKER = "ETH-USD"
+BTC_START_DATE = "2016-01-01"
+ETH_START_DATE = "2018-01-01"
+
+TRAIN_TICKERS = [BTC_TICKER, ETH_TICKER]
+TICKER_START_DATES = {
+    BTC_TICKER: BTC_START_DATE,
+    ETH_TICKER: ETH_START_DATE
+}
+
+TICKER = BTC_TICKER
 INTERVAL = "1h"
-DAYS_TO_LOAD = 700 # ~2 years of data for better generalization
+DAYS_TO_LOAD = None # None loads full history from start dates (BTC 2016, ETH 2018)
 
 END_DATE = datetime.now()
-START_DATE = END_DATE - timedelta(days=DAYS_TO_LOAD)
+START_DATE = datetime.strptime(BTC_START_DATE, '%Y-%m-%d')
 END_DATE_STR = END_DATE.strftime('%Y-%m-%d')
-START_DATE_STR = START_DATE.strftime('%Y-%m-%d')
+START_DATE_STR = BTC_START_DATE
 
 # --- Preprocessing parameters ---
-N_STEPS = 128 # 128 consecutive candles (input segment)
+N_STEPS = 256 # 256 consecutive candles (input segment: 256 * 8 = 2048 features)
 K_STEPS = 32  # Prediction horizon (predict price 32 candles ahead)
 
 # Prediction & Strategy parameters (Dual-Threshold Oscillator Strategy)
-DEFAULT_X_ENTRY = 0.01  # Entry threshold: Buy > 1 + 0.01 (1.010), Sell < 1 - 0.01 (0.990)
-DEFAULT_X_EXIT = 0.005  # Exit threshold: Exit Long < 1 + 0.005 (1.005), Exit Short > 1 - 0.005 (0.995)
+DEFAULT_X_ENTRY = 0.05  # Entry threshold: Buy > 1 + 0.05 (1.050), Sell < 1 - 0.05 (0.950)
+DEFAULT_X_EXIT = -0.02  # Exit threshold: Exit Long < 1 + (-0.02) (0.980), Exit Short > 1 - (-0.02) (1.020)
 PREDICTION_BUY_THRESHOLD = 1.0 + DEFAULT_X_ENTRY
 PREDICTION_SELL_THRESHOLD = 1.0 - DEFAULT_X_ENTRY
 PROFIT_TAKE_FACTOR = 2.0          # Backward compatibility
@@ -24,9 +35,9 @@ STOP_LOSS_FACTOR = 1.0            # Backward compatibility
 MAX_HOLDING_PERIOD = 32           # Backward compatibility
 
 # --- Model parameters ---
-EPOCHS = 50
-BATCH_SIZE = 32
-LEARNING_RATE = 0.01 # Increased learning rate (was 0.005)
+EPOCHS = 200
+BATCH_SIZE = 128
+LEARNING_RATE = 0.0003 # Optimal learning rate for deep MLP with bounded sigmoid output
 
 # --- Backtesting parameters ---
 INITIAL_CAPITAL = 10000.0
