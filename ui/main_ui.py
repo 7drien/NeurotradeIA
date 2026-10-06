@@ -32,12 +32,32 @@ class App(tk.Tk):
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
 
         # --- UI Layout ---
-        main_frame = ttk.Frame(self, padding="15")
+        # --- UI Layout ---
+        main_frame = ttk.Frame(self, padding="10")
         main_frame.pack(fill=tk.BOTH, expand=True)
         
-        # Left Panel (Settings & Controls)
-        left_panel = ttk.Frame(main_frame, width=320)
-        left_panel.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 20))
+        # Left Panel (Settings & Controls) with Scrollable Container
+        left_container = ttk.Frame(main_frame, width=340)
+        left_container.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 15))
+        left_container.pack_propagate(False)
+
+        canvas = tk.Canvas(left_container, bg="#1e1e1e", highlightthickness=0, width=325)
+        scrollbar = ttk.Scrollbar(left_container, orient="vertical", command=canvas.yview)
+        left_panel = ttk.Frame(canvas)
+
+        left_panel.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        canvas.create_window((0, 0), window=left_panel, anchor="nw", width=320)
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        def _on_mousewheel(event):
+            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        canvas.bind_all("<MouseWheel>", _on_mousewheel)
         
         # Right Panel (Metrics & Matplotlib Plots)
         right_panel = ttk.Frame(main_frame)
@@ -45,70 +65,68 @@ class App(tk.Tk):
         
         # --- Section 1: Model & Training Configuration ---
         settings_lbl = ttk.Label(left_panel, text="Training Configuration", style="Header.TLabel")
-        settings_lbl.pack(pady=(0, 15), anchor=tk.W)
+        settings_lbl.pack(pady=(0, 6), anchor=tk.W)
         
         self.epochs_var = tk.StringVar(value="200")
         self.batch_size_var = tk.StringVar(value="128")
         self.lr_var = tk.StringVar(value="0.0003")
+        self.days_var = tk.StringVar(value="All")
         self.n_steps_var = tk.StringVar(value="256")
         self.k_steps_var = tk.StringVar(value="32")
-        self.days_var = tk.StringVar(value="All")
         
-        self.create_input_field(left_panel, "Epochs:", self.epochs_var)
-        self.create_input_field(left_panel, "Batch Size:", self.batch_size_var)
-        self.create_input_field(left_panel, "Learning Rate:", self.lr_var)
-        self.create_input_field(left_panel, "Sequence (256 Candles):", self.n_steps_var)
-        self.create_input_field(left_panel, "Prediction Horizon (32 Candles):", self.k_steps_var)
-        self.create_input_field(left_panel, "Days to Load (or 'All'):", self.days_var)
+        self.create_two_inputs_row(left_panel, "Epochs:", self.epochs_var, "Batch Size:", self.batch_size_var)
+        self.create_two_inputs_row(left_panel, "Learning Rate:", self.lr_var, "Days to Load:", self.days_var)
+        self.create_two_inputs_row(left_panel, "Sequence (256):", self.n_steps_var, "Horizon (32):", self.k_steps_var)
         
         self.early_stopping_var = tk.BooleanVar(value=True)
         self.es_check = ttk.Checkbutton(left_panel, text="Enable Early Stopping", variable=self.early_stopping_var)
-        self.es_check.pack(anchor=tk.W, pady=(4, 8))
+        self.es_check.pack(anchor=tk.W, pady=(3, 5))
         
         self.train_button = ttk.Button(left_panel, text="▶ START TRAINING", command=self.run_training)
-        self.train_button.pack(fill=tk.X, pady=(10, 10))
+        self.train_button.pack(fill=tk.X, pady=(4, 6))
 
-        # --- Section 2: Fast Oscillator Strategy (Dual Thresholds: Entry & Exit) ---
+        # --- Section 2: Fast Oscillator Strategy (Dual Thresholds & Fees) ---
         sep = ttk.Separator(left_panel, orient='horizontal')
-        sep.pack(fill=tk.X, pady=15)
+        sep.pack(fill=tk.X, pady=8)
 
         strat_lbl = ttk.Label(left_panel, text="Dual-Threshold Strategy", style="SubHeader.TLabel")
-        strat_lbl.pack(pady=(0, 5), anchor=tk.W)
+        strat_lbl.pack(pady=(0, 2), anchor=tk.W)
 
         desc_lbl = ttk.Label(
             left_panel, 
-            text="Long: Buy > 1+x_in  | Exit < 1+x_out\nShort: Sell < 1-x_in | Exit > 1-x_out\nRecalculates instantly without retraining.",
-            font=("Segoe UI", 9),
+            text="Long: Buy > 1+x_in | Exit < 1+x_out\nShort: Sell < 1-x_in | Exit > 1-x_out",
+            font=("Segoe UI", 8),
             foreground="#aaaaaa"
         )
-        desc_lbl.pack(pady=(0, 8), anchor=tk.W)
+        desc_lbl.pack(pady=(0, 4), anchor=tk.W)
 
         self.x_entry_var = tk.StringVar(value="0.05")
         self.x_exit_var = tk.StringVar(value="-0.02")
+        self.fees_var = tk.StringVar(value="0.1")
 
-        self.create_input_field(left_panel, "Entry Threshold x_in (e.g. 0.01 = 1%):", self.x_entry_var)
-        self.create_input_field(left_panel, "Exit Threshold x_out (e.g. 0.005 = 0.5%):", self.x_exit_var)
+        self.create_two_inputs_row(left_panel, "Entry x_in (e.g. 0.05):", self.x_entry_var, "Exit x_out (e.g. -0.02):", self.x_exit_var)
+        self.create_input_field(left_panel, "Fees per Trade (%):", self.fees_var)
 
         # Quick preset buttons
-        preset_lbl = ttk.Label(left_panel, text="Quick Presets (Entry / Exit):", font=("Segoe UI", 9), foreground="#aaaaaa")
-        preset_lbl.pack(pady=(6, 2), anchor=tk.W)
+        preset_lbl = ttk.Label(left_panel, text="Quick Presets (Entry / Exit):", font=("Segoe UI", 8), foreground="#aaaaaa")
+        preset_lbl.pack(pady=(4, 2), anchor=tk.W)
 
         preset_frame1 = ttk.Frame(left_panel)
-        preset_frame1.pack(fill=tk.X, pady=2)
-        ttk.Button(preset_frame1, text="0.01 / 0.005", width=12, command=lambda: self.set_thresholds("0.01", "0.005")).pack(side=tk.LEFT, padx=2)
-        ttk.Button(preset_frame1, text="0.008 / 0.003", width=12, command=lambda: self.set_thresholds("0.008", "0.003")).pack(side=tk.LEFT, padx=2)
+        preset_frame1.pack(fill=tk.X, pady=1)
+        ttk.Button(preset_frame1, text="0.01 / 0.005", width=11, command=lambda: self.set_thresholds("0.01", "0.005")).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=1)
+        ttk.Button(preset_frame1, text="0.008 / 0.003", width=11, command=lambda: self.set_thresholds("0.008", "0.003")).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=1)
 
         preset_frame2 = ttk.Frame(left_panel)
-        preset_frame2.pack(fill=tk.X, pady=2)
-        ttk.Button(preset_frame2, text="0.015 / 0.008", width=12, command=lambda: self.set_thresholds("0.015", "0.008")).pack(side=tk.LEFT, padx=2)
-        ttk.Button(preset_frame2, text="0.02 / 0.01", width=12, command=lambda: self.set_thresholds("0.02", "0.01")).pack(side=tk.LEFT, padx=2)
+        preset_frame2.pack(fill=tk.X, pady=1)
+        ttk.Button(preset_frame2, text="0.015 / 0.008", width=11, command=lambda: self.set_thresholds("0.015", "0.008")).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=1)
+        ttk.Button(preset_frame2, text="0.02 / 0.01", width=11, command=lambda: self.set_thresholds("0.02", "0.01")).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=1)
 
         self.recalc_button = ttk.Button(
             left_panel, 
             text="⚡ RECALCULATE BACKTEST", 
             command=self.run_recalculate_backtest
         )
-        self.recalc_button.pack(fill=tk.X, pady=(12, 10))
+        self.recalc_button.pack(fill=tk.X, pady=(8, 6))
         
         # --- Top Header & Metrics Bar (Right Panel) ---
         header_frame = ttk.Frame(right_panel)
@@ -165,12 +183,26 @@ class App(tk.Tk):
         self.after(100, self.check_queue)
         self.after(600, self.initial_load_backtest)
 
+    def create_two_inputs_row(self, parent, label1, var1, label2, var2):
+        row_frame = ttk.Frame(parent)
+        row_frame.pack(fill=tk.X, pady=2)
+        
+        col1 = ttk.Frame(row_frame)
+        col1.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
+        ttk.Label(col1, text=label1, font=("Segoe UI", 8)).pack(anchor=tk.W)
+        ttk.Entry(col1, textvariable=var1, font=("Segoe UI", 9)).pack(fill=tk.X)
+        
+        col2 = ttk.Frame(row_frame)
+        col2.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(4, 0))
+        ttk.Label(col2, text=label2, font=("Segoe UI", 8)).pack(anchor=tk.W)
+        ttk.Entry(col2, textvariable=var2, font=("Segoe UI", 9)).pack(fill=tk.X)
+
     def create_input_field(self, parent, label_text, var):
         frame = ttk.Frame(parent)
-        frame.pack(fill=tk.X, pady=4)
-        lbl = ttk.Label(frame, text=label_text, font=("Segoe UI", 9))
+        frame.pack(fill=tk.X, pady=2)
+        lbl = ttk.Label(frame, text=label_text, font=("Segoe UI", 8))
         lbl.pack(side=tk.TOP, anchor=tk.W)
-        entry = ttk.Entry(frame, textvariable=var, font=("Segoe UI", 10))
+        entry = ttk.Entry(frame, textvariable=var, font=("Segoe UI", 9))
         entry.pack(side=tk.TOP, fill=tk.X)
 
     def set_thresholds(self, in_val_str, out_val_str):
@@ -189,6 +221,7 @@ class App(tk.Tk):
         try:
             days_str = self.days_var.get().strip()
             days_to_load = int(days_str) if days_str.isdigit() and int(days_str) > 0 else None
+            fees_pct = float(self.fees_var.get())
             params = {
                 'epochs': int(self.epochs_var.get()),
                 'batch_size': int(self.batch_size_var.get()),
@@ -198,7 +231,9 @@ class App(tk.Tk):
                 'days_to_load': days_to_load,
                 'early_stopping': self.early_stopping_var.get(),
                 'x_entry': float(self.x_entry_var.get()),
-                'x_exit': float(self.x_exit_var.get())
+                'x_exit': float(self.x_exit_var.get()),
+                'fees_pct': fees_pct,
+                'fees': fees_pct / 100.0
             }
         except ValueError:
             print("Invalid input parameters. Please check values.")
@@ -220,19 +255,21 @@ class App(tk.Tk):
 
     def run_recalculate_backtest(self):
         """
-        Recalculates the backtest instantly using cached predictions for x_entry and x_exit.
+        Recalculates the backtest instantly using cached predictions for x_entry, x_exit, and fees.
         Does NOT re-train the model.
         """
         try:
             x_in = float(self.x_entry_var.get())
             x_out = float(self.x_exit_var.get())
+            fees_pct = float(self.fees_var.get())
+            fees = fees_pct / 100.0
         except ValueError:
-            print("Invalid thresholds. Please enter decimal numbers like 0.01 and 0.005.")
+            print("Invalid inputs. Please enter decimal numbers for thresholds and fees.")
             return
 
-        print(f"Recalculating backtest with x_entry={x_in:.4f}, x_exit={x_out:.4f}...")
+        print(f"Recalculating backtest with x_entry={x_in:.4f}, x_exit={x_out:.4f}, fees={fees_pct:.2f}%...")
         try:
-            results = run_backtest_with_threshold(x_entry=x_in, x_exit=x_out)
+            results = run_backtest_with_threshold(x_entry=x_in, x_exit=x_out, fees=fees)
             if results:
                 self.update_backtest_ui(results)
             else:
@@ -283,7 +320,9 @@ class App(tk.Tk):
             try:
                 x_in = float(self.x_entry_var.get())
                 x_out = float(self.x_exit_var.get())
-                results = run_backtest_with_threshold(x_entry=x_in, x_exit=x_out)
+                fees_pct = float(self.fees_var.get())
+                fees = fees_pct / 100.0
+                results = run_backtest_with_threshold(x_entry=x_in, x_exit=x_out, fees=fees)
                 if results and len(results.get('preds', [])) > 500:
                     self.update_backtest_ui(results)
             except Exception as e:

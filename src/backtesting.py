@@ -105,13 +105,14 @@ def get_or_compute_predictions(params=None, force_recompute=False, model=None, t
 
     return cache_data
 
-def run_backtest_with_threshold(x_entry=DEFAULT_X_ENTRY, x_exit=DEFAULT_X_EXIT, predictions_data=None):
+def run_backtest_with_threshold(x_entry=DEFAULT_X_ENTRY, x_exit=DEFAULT_X_EXIT, fees=TRANSACTION_COST, predictions_data=None):
     """
     Runs a fast VectorBT backtest based on precomputed model outputs with dual thresholds:
-    - Long Entry:  output > 1.0 + x_entry (e.g. > 1.010)
-    - Long Exit:   output < 1.0 + x_exit  (e.g. < 1.005)
-    - Short Entry: output < 1.0 - x_entry (e.g. < 0.990)
-    - Short Exit:  output > 1.0 - x_exit  (e.g. > 0.995)
+    - Long Entry:  output > 1.0 + x_entry (e.g. > 1.050)
+    - Long Exit:   output < 1.0 + x_exit  (e.g. < 0.980)
+    - Short Entry: output < 1.0 - x_entry (e.g. < 0.950)
+    - Short Exit:  output > 1.0 - x_exit  (e.g. > 1.020)
+    - Fees:        Transaction fee per trade (default: TRANSACTION_COST = 0.001 = 0.1%)
     Takes < 50ms without retraining.
     """
     if predictions_data is None:
@@ -143,7 +144,7 @@ def run_backtest_with_threshold(x_entry=DEFAULT_X_ENTRY, x_exit=DEFAULT_X_EXIT, 
         exits=exits,
         short_entries=short_entries,
         short_exits=short_exits,
-        fees=TRANSACTION_COST,
+        fees=fees,
         init_cash=INITIAL_CAPITAL,
         freq='1h'
     )
@@ -173,6 +174,8 @@ def run_backtest_with_threshold(x_entry=DEFAULT_X_ENTRY, x_exit=DEFAULT_X_EXIT, 
         "test_indices": test_indices,
         "x_entry": x_entry,
         "x_exit": x_exit,
+        "fees": fees,
+        "fees_pct": fees * 100.0,
         "buy_entry": buy_entry,
         "buy_exit": buy_exit,
         "sell_entry": sell_entry,
@@ -194,6 +197,12 @@ def simulate_backtest(params=None, model=None, test_data=None):
         params = {}
     x_entry = params.get('x_entry', DEFAULT_X_ENTRY)
     x_exit = params.get('x_exit', DEFAULT_X_EXIT)
+    fees_pct = params.get('fees_pct')
+    if fees_pct is not None:
+        fees = float(fees_pct) / 100.0
+    else:
+        fees = params.get('fees', TRANSACTION_COST)
+
     predictions_data = get_or_compute_predictions(
         params=params, 
         force_recompute=True, 
@@ -202,7 +211,7 @@ def simulate_backtest(params=None, model=None, test_data=None):
     )
     if predictions_data is None:
         return None
-    return run_backtest_with_threshold(x_entry=x_entry, x_exit=x_exit, predictions_data=predictions_data)
+    return run_backtest_with_threshold(x_entry=x_entry, x_exit=x_exit, fees=fees, predictions_data=predictions_data)
 
 def plot_backtest_results(results, fig=None, ax1=None, ax2=None, ax3=None):
     """
@@ -266,7 +275,8 @@ def plot_backtest_results(results, fig=None, ax1=None, ax2=None, ax3=None):
             ax1.scatter(entries_idx[short_mask], entry_prices[short_mask], label=f'Sell Short (< {sell_entry:.3f})', marker='v', color='#f44336', s=90, zorder=5)
             ax1.scatter(exit_idx[short_mask], exit_prices[short_mask], label=f'Exit Short (> {sell_exit:.3f})', marker='x', color='#e57373', s=70, zorder=5)
             
-    ax1.set_title(f'Market Price & Trade Executions (Entry x={x_entry:.3f}, Exit x={x_exit:.3f} | Total Trades: {trades.count()})', fontsize=12)
+    fees_pct = results.get("fees_pct", results.get("fees", TRANSACTION_COST) * 100.0)
+    ax1.set_title(f'Market Price & Trade Executions (Entry x={x_entry:.3f}, Exit x={x_exit:.3f}, Fee={fees_pct:.2f}% | Total Trades: {trades.count()})', fontsize=12)
     ax1.set_ylabel('Price (USD)', fontsize=10)
     ax1.legend(loc='upper left', fontsize=9)
     ax1.grid(True, alpha=0.3)
@@ -303,6 +313,6 @@ def plot_backtest_results(results, fig=None, ax1=None, ax2=None, ax3=None):
     if new_figure:
         plt.show()
     
-    print(f"\n--- Backtest Results (x_entry={x_entry:.4f}, x_exit={x_exit:.4f}) ---")
+    print(f"\n--- Backtest Results (x_entry={x_entry:.4f}, x_exit={x_exit:.4f}, fee={fees_pct:.2f}%) ---")
     print(f"Strategy Return: {ret:+.2f}% | Buy & Hold BTC: {bh_ret:+.2f}% | Sharpe: {sharpe:.2f}")
     print(f"Win Rate: {winrate:.2f}% | Max Drawdown: {max_dd:.2f}% | Trades: {trades.count()} | Profit Factor: {profit_factor:.2f}")

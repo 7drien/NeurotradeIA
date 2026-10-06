@@ -41,7 +41,8 @@ LEARNING_RATE = 0.0003 # Optimal learning rate for deep MLP with bounded sigmoid
 
 # --- Backtesting parameters ---
 INITIAL_CAPITAL = 10000.0
-TRANSACTION_COST = 0.001
+DEFAULT_FEES_PCT = 0.1 # Default fee percentage: 0.1% per trade (standard crypto spot fee)
+TRANSACTION_COST = DEFAULT_FEES_PCT / 100.0 # 0.001 (decimal)
 
 # --- Strategy Filters ---
 CONFIRMATION_PERIOD = 3 # Increased to 3 to reduce noise trades
