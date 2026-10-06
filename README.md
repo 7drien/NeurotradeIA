@@ -100,18 +100,24 @@ To preserve physical market relationships and avoid lookahead bias, each 256-can
 The trained neural network acts as a **256-candle forward oscillator** predicting relative price momentum over the next 32 candles. Positions are managed dynamically using **dual hysteresis thresholds** (no fixed exit duration):
 
 1. **Dual Threshold Trading Signals**:
-   * **BUY (Long Entry)**: Triggered when model output $\hat{y} > 1 + x_{\text{entry}}$ (Default: $x_{\text{entry}} = 0.010 \implies \hat{y} > 1.010$).
-   * **EXIT LONG**: Closes the long position as soon as $\hat{y} < 1 + x_{\text{exit}}$ (Default: $x_{\text{exit}} = 0.005 \implies \hat{y} < 1.005$).
-   * **SELL (Short Entry)**: Triggered when model output $\hat{y} < 1 - x_{\text{entry}}$ (Default: $x_{\text{entry}} = 0.010 \implies \hat{y} < 0.990$).
-   * **EXIT SHORT**: Closes the short position as soon as $\hat{y} > 1 - x_{\text{exit}}$ (Default: $x_{\text{exit}} = 0.005 \implies \hat{y} > 0.995$).
+   * **BUY (Long Entry)**: Triggered when model output $\hat{y} > 1 + x_{\text{entry}}$ (Default: $x_{\text{entry}} = 0.050 \implies \hat{y} > 1.050$).
+   * **EXIT LONG**: Closes the long position as soon as $\hat{y} < 1 + x_{\text{exit}}$ (Default: $x_{\text{exit}} = -0.020 \implies \hat{y} < 0.980$).
+   * **SELL (Short Entry)**: Triggered when model output $\hat{y} < 1 - x_{\text{entry}}$ (Default: $x_{\text{entry}} = 0.050 \implies \hat{y} < 0.950$).
+   * **EXIT SHORT**: Closes the short position as soon as $\hat{y} > 1 - x_{\text{exit}}$ (Default: $x_{\text{exit}} = -0.020 \implies \hat{y} > 1.020$).
    * **Dynamic Duration**: Positions are held as long as momentum remains in the outer channel and close immediately when momentum cools down into the inner exit band.
 2. **Candle-by-Candle Prediction Caching**:
    * Model outputs for each candle are evaluated and stored directly into `data/cached/model_predictions.pkl`.
-   * When tuning $x_{\text{entry}}$ or $x_{\text{exit}}$ in the UI, **no retraining or re-inference is required**. VectorBT recalculates trade executions, equity curves, win rates, and total returns in **under 30 milliseconds**.
-3. **Interactive 3-Panel GUI (`main.py`)**:
+   * When tuning $x_{\text{entry}}$ or $x_{\text{exit}}$ in the UI, **no retraining or re-inference is required**. VectorBT recalculates trade executions, equity curves, win rates, Sharpe ratio, and returns in **under 30 milliseconds**.
+3. **Comprehensive Performance Metrics & Benchmarking**:
+   * **Strategy Return**: Cumulative percentage return of the simulated strategy.
+   * **Buy & Hold Benchmark**: Comparative return of holding BTC-USD over the exact same 20% test slice.
+   * **Sharpe Ratio**: Annualized risk-adjusted return metric computed with 1h frequency.
+   * **Max Drawdown & Win Rate**: Peak-to-trough risk and percentage of profitable trades.
+4. **Interactive 3-Panel GUI (`main.py`)**:
    * **Top Chart**: Market price series with precise Buy (▲) and Sell (▼) execution markers.
    * **Middle Chart**: The 256-candle neural oscillator line ($\hat{y}$) with dynamic entry lines ($1 \pm x_{\text{entry}}$, dashed) and exit lines ($1 \pm x_{\text{exit}}$, dotted).
-   * **Bottom Chart**: Real-time portfolio equity curve.
+   * **Bottom Chart**: Portfolio Equity curve plotted alongside the **Buy & Hold BTC benchmark curve**.
+   * **Metrics Header**: Live display of Epoch, Strategy Return, Buy & Hold Return, Sharpe Ratio, Win Rate, Total Trades, and Max Drawdown.
    * **Controls**: Live input fields for $x_{\text{entry}}$ and $x_{\text{exit}}$, quick preset buttons (`0.01 / 0.005`, `0.008 / 0.003`, etc.), and an instant `⚡ RECALCULATE BACKTEST` button.
 
 ---

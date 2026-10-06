@@ -252,18 +252,28 @@ class App(tk.Tk):
         self.canvas.draw()
         
         pf = results['portfolio']
-        final_value = pf.value().iloc[-1]
-        initial_capital = results['initial_capital']
-        returns = (final_value - initial_capital) / initial_capital * 100
-        total_trades = pf.trades.count()
-        winrate = pf.trades.win_rate() * 100 if total_trades > 0 else 0.0
+        returns = results.get('returns', 0.0)
+        bh_return = results.get('bh_return', 0.0)
+        sharpe = results.get('sharpe_ratio', 0.0)
+        max_dd = results.get('max_drawdown', 0.0)
+        total_trades = results.get('total_trades', pf.trades.count())
+        winrate = results.get('win_rate', pf.trades.win_rate() * 100 if total_trades > 0 else 0.0)
         
         self.return_label.config(
-            text=f"Return: {returns:.2f}%", 
+            text=f"Return: {returns:+.2f}%", 
             foreground="#4caf50" if returns >= 0 else "#f44336"
+        )
+        self.bh_label.config(
+            text=f"Buy & Hold: {bh_return:+.2f}%",
+            foreground="#f59e0b"
+        )
+        self.sharpe_label.config(
+            text=f"Sharpe: {sharpe:.2f}",
+            foreground="#4caf50" if sharpe >= 1.0 else ("#e040fb" if sharpe >= 0.0 else "#f44336")
         )
         self.winrate_label.config(text=f"Win Rate: {winrate:.2f}%")
         self.trades_label.config(text=f"Trades: {total_trades}")
+        self.max_dd_label.config(text=f"Max DD: {max_dd:.2f}%")
         if 'epoch' in results:
             self.epoch_label.config(text=f"Epoch: {results['epoch']}")
 
