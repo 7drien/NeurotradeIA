@@ -247,13 +247,22 @@ def plot_backtest_results(results, fig=None, ax1=None, ax2=None, ax3=None):
         ax2.clear()
         if ax3 is not None:
             ax3.clear()
+
+    fig.patch.set_facecolor('#0f1117')
+    for ax in [ax1, ax2, ax3]:
+        if ax is not None:
+            ax.set_facecolor('#181b24')
+            ax.grid(True, color='#262b3a', alpha=0.6, linestyle='--')
+            for spine in ax.spines.values():
+                spine.set_color('#262b3a')
+            ax.tick_params(colors='#94a3b8', labelsize=8)
         
     test_indices = pf.close.index
     actual_prices = pf.close.values
     portfolio_value = pf.value().values
     
     # --- 1. Price and Trade Signals ---
-    ax1.plot(test_indices, actual_prices, label='Price (USD)', color='#4ba3e3', linewidth=1.2, zorder=1)
+    ax1.plot(test_indices, actual_prices, label='Price (USD)', color='#38bdf8', linewidth=1.2, zorder=1)
     
     trades = pf.trades
     if trades.count() > 0:
@@ -268,31 +277,29 @@ def plot_backtest_results(results, fig=None, ax1=None, ax2=None, ax3=None):
         short_mask = direction == 'Short'
         
         if long_mask.any():
-            ax1.scatter(entries_idx[long_mask], entry_prices[long_mask], label=f'Buy Long (> {buy_entry:.3f})', marker='^', color='#4caf50', s=90, zorder=5)
-            ax1.scatter(exit_idx[long_mask], exit_prices[long_mask], label=f'Exit Long (< {buy_exit:.3f})', marker='x', color='#81c784', s=70, zorder=5)
+            ax1.scatter(entries_idx[long_mask], entry_prices[long_mask], label=f'Buy Long (> {buy_entry:.3f})', marker='^', color='#22c55e', s=85, zorder=5)
+            ax1.scatter(exit_idx[long_mask], exit_prices[long_mask], label=f'Exit Long (< {buy_exit:.3f})', marker='x', color='#4ade80', s=65, zorder=5)
             
         if short_mask.any():
-            ax1.scatter(entries_idx[short_mask], entry_prices[short_mask], label=f'Sell Short (< {sell_entry:.3f})', marker='v', color='#f44336', s=90, zorder=5)
-            ax1.scatter(exit_idx[short_mask], exit_prices[short_mask], label=f'Exit Short (> {sell_exit:.3f})', marker='x', color='#e57373', s=70, zorder=5)
+            ax1.scatter(entries_idx[short_mask], entry_prices[short_mask], label=f'Sell Short (< {sell_entry:.3f})', marker='v', color='#ef4444', s=85, zorder=5)
+            ax1.scatter(exit_idx[short_mask], exit_prices[short_mask], label=f'Exit Short (> {sell_exit:.3f})', marker='x', color='#f87171', s=65, zorder=5)
             
     fees_pct = results.get("fees_pct", results.get("fees", TRANSACTION_COST) * 100.0)
-    ax1.set_title(f'Market Price & Trade Executions (Entry x={x_entry:.3f}, Exit x={x_exit:.3f}, Fee={fees_pct:.2f}% | Total Trades: {trades.count()})', fontsize=12)
-    ax1.set_ylabel('Price (USD)', fontsize=10)
-    ax1.legend(loc='upper left', fontsize=9)
-    ax1.grid(True, alpha=0.3)
+    ax1.set_title(f'Market Price & Trade Executions (Entry x={x_entry:.3f}, Exit x={x_exit:.3f}, Fee={fees_pct:.2f}% | Total Trades: {trades.count()})', fontsize=11, color='#f1f5f9', fontweight='bold')
+    ax1.set_ylabel('Price (USD)', fontsize=9, color='#94a3b8')
+    ax1.legend(loc='upper left', fontsize=8, facecolor='#181b24', edgecolor='#262b3a', labelcolor='#e2e8f0')
     
     # --- 2. Model Oscillator with 1±x_entry and 1±x_exit Thresholds ---
     if ax3 is not None and preds_series is not None:
-        ax2.plot(test_indices, preds_series.values, label='Model Output Oscillator', color='#00d2ff', linewidth=1.0)
-        ax2.axhline(buy_entry, color='#4caf50', linestyle='--', label=f'Buy Entry (1+x_in = {buy_entry:.4f})', alpha=0.9)
-        ax2.axhline(buy_exit, color='#81c784', linestyle=':', label=f'Buy Exit (1+x_out = {buy_exit:.4f})', alpha=0.9)
-        ax2.axhline(1.0, color='#888888', linestyle=':', label='Neutral (1.0)', alpha=0.6)
-        ax2.axhline(sell_exit, color='#e57373', linestyle=':', label=f'Sell Exit (1-x_out = {sell_exit:.4f})', alpha=0.9)
-        ax2.axhline(sell_entry, color='#f44336', linestyle='--', label=f'Sell Entry (1-x_in = {sell_entry:.4f})', alpha=0.9)
-        ax2.set_title(f'128-Candle Oscillator with Entry/Exit Hysteresis Bands (x_in={x_entry:.3f}, x_out={x_exit:.3f})', fontsize=11)
-        ax2.set_ylabel('Output', fontsize=10)
-        ax2.legend(loc='upper left', fontsize=8)
-        ax2.grid(True, alpha=0.3)
+        ax2.plot(test_indices, preds_series.values, label='Model Oscillator', color='#06b6d4', linewidth=1.0)
+        ax2.axhline(buy_entry, color='#22c55e', linestyle='--', label=f'Buy Entry ({buy_entry:.4f})', alpha=0.9)
+        ax2.axhline(buy_exit, color='#4ade80', linestyle=':', label=f'Buy Exit ({buy_exit:.4f})', alpha=0.9)
+        ax2.axhline(1.0, color='#64748b', linestyle=':', label='Neutral (1.0)', alpha=0.6)
+        ax2.axhline(sell_exit, color='#f87171', linestyle=':', label=f'Sell Exit ({sell_exit:.4f})', alpha=0.9)
+        ax2.axhline(sell_entry, color='#ef4444', linestyle='--', label=f'Sell Entry ({sell_entry:.4f})', alpha=0.9)
+        ax2.set_title(f'128-Candle Oscillator with Hysteresis Bands (x_in={x_entry:.3f}, x_out={x_exit:.3f})', fontsize=11, color='#f1f5f9', fontweight='bold')
+        ax2.set_ylabel('Output', fontsize=9, color='#94a3b8')
+        ax2.legend(loc='upper left', fontsize=8, facecolor='#181b24', edgecolor='#262b3a', labelcolor='#e2e8f0')
         equity_ax = ax3
     else:
         equity_ax = ax2
@@ -300,14 +307,13 @@ def plot_backtest_results(results, fig=None, ax1=None, ax2=None, ax3=None):
     # --- 3. Portfolio Equity vs Buy & Hold Curve ---
     bh_equity = (actual_prices / (actual_prices[0] + 1e-8)) * initial_capital
 
-    equity_ax.plot(test_indices, portfolio_value, label=f'Strategy Equity ({ret:+.2f}%)', color='#ab47bc', linewidth=1.5, zorder=3)
+    equity_ax.plot(test_indices, portfolio_value, label=f'Strategy Equity ({ret:+.2f}%)', color='#a855f7', linewidth=1.5, zorder=3)
     equity_ax.plot(test_indices, bh_equity, label=f'Buy & Hold BTC ({bh_ret:+.2f}%)', color='#f59e0b', linestyle='--', linewidth=1.2, alpha=0.85, zorder=2)
-    equity_ax.axhline(initial_capital, color='#888888', linestyle=':', label='Initial Capital', alpha=0.5, zorder=1)
-    equity_ax.set_title(f'Portfolio Equity vs Buy & Hold (Sharpe: {sharpe:.2f} | Max DD: {max_dd:.2f}%)', fontsize=11)
-    equity_ax.set_ylabel('Equity (USD)', fontsize=10)
-    equity_ax.set_xlabel('Date', fontsize=10)
-    equity_ax.legend(loc='upper left', fontsize=8)
-    equity_ax.grid(True, alpha=0.3)
+    equity_ax.axhline(initial_capital, color='#64748b', linestyle=':', label='Initial Capital', alpha=0.5, zorder=1)
+    equity_ax.set_title(f'Portfolio Equity vs Buy & Hold (Sharpe: {sharpe:.2f} | Max DD: {max_dd:.2f}%)', fontsize=11, color='#f1f5f9', fontweight='bold')
+    equity_ax.set_ylabel('Equity (USD)', fontsize=9, color='#94a3b8')
+    equity_ax.set_xlabel('Date', fontsize=9, color='#94a3b8')
+    equity_ax.legend(loc='upper left', fontsize=8, facecolor='#181b24', edgecolor='#262b3a', labelcolor='#e2e8f0')
     
     fig.tight_layout()
     if new_figure:

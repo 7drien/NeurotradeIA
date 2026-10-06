@@ -12,157 +12,278 @@ from src.backtesting import plot_backtest_results, run_backtest_with_threshold
 
 ui_queue = Queue()
 
+# Color Palette - Obsidian Quant Terminal
+BG_MAIN = "#0c0e14"
+BG_CARD = "#141721"
+BORDER_CARD = "#232738"
+BG_INPUT = "#1b1f2d"
+BORDER_INPUT = "#2d3448"
+BORDER_FOCUS = "#38bdf8"
+TEXT_WHITE = "#f8fafc"
+TEXT_MUTED = "#94a3b8"
+TEXT_SUB = "#64748b"
+
+ACCENT_BLUE = "#0284c7"
+ACCENT_BLUE_HOVER = "#0369a1"
+ACCENT_PURPLE = "#6366f1"
+ACCENT_PURPLE_HOVER = "#4f46e5"
+ACCENT_GREEN = "#10b981"
+ACCENT_AMBER = "#f59e0b"
+ACCENT_CYAN = "#06b6d4"
+ACCENT_ROSE = "#f43f5e"
+
+def get_font_family():
+    try:
+        from tkinter import font
+        families = font.families()
+        for f in ["Segoe UI", "Ubuntu", "DejaVu Sans", "Helvetica", "Arial"]:
+            if f in families:
+                return f
+    except Exception:
+        pass
+    return "DejaVu Sans"
+
+def get_device_info():
+    try:
+        import tensorflow as tf
+        gpus = tf.config.list_physical_devices('GPU')
+        if gpus:
+            return "NVIDIA CUDA GPU Active", ACCENT_GREEN
+    except Exception:
+        pass
+    return "CPU Fallback Mode", TEXT_MUTED
+
+class ModernEntry(tk.Entry):
+    def __init__(self, master, textvariable=None, font_family="DejaVu Sans", **kwargs):
+        super().__init__(
+            master,
+            textvariable=textvariable,
+            bg=BG_INPUT,
+            fg=TEXT_WHITE,
+            insertbackground="#ffffff",
+            relief="flat",
+            highlightbackground=BORDER_INPUT,
+            highlightcolor=BORDER_FOCUS,
+            highlightthickness=1,
+            font=(font_family, 9),
+            **kwargs
+        )
+
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("NeurotradeIA - 128-Candle Oscillator Dashboard")
+        self.title("NeurotradeAI - 128-Candle Quantitative Dashboard")
         self.geometry("1450x950")
-        
-        # Apply modern dark theme
+        self.configure(bg=BG_MAIN)
+        self.protocol("WM_DELETE_WINDOW", self.on_closing)
+
+        self.font_family = get_font_family()
+
+        # Modern TTK style configuration
         style = ttk.Style(self)
         if 'clam' in style.theme_names():
             style.theme_use('clam')
-        style.configure("TFrame", background="#1e1e1e")
-        style.configure("TLabel", background="#1e1e1e", foreground="#ffffff", font=("Segoe UI", 11))
-        style.configure("TButton", font=("Segoe UI", 11, "bold"), padding=8)
-        style.configure("Header.TLabel", font=("Segoe UI", 15, "bold"), foreground="#00d2ff")
-        style.configure("SubHeader.TLabel", font=("Segoe UI", 12, "bold"), foreground="#00e676")
-        
-        self.configure(bg="#1e1e1e")
-        self.protocol("WM_DELETE_WINDOW", self.on_closing)
-
-        # --- UI Layout ---
-        # --- UI Layout ---
-        main_frame = ttk.Frame(self, padding="10")
-        main_frame.pack(fill=tk.BOTH, expand=True)
-        
-        # Left Panel (Settings & Controls) with Scrollable Container
-        left_container = ttk.Frame(main_frame, width=340)
-        left_container.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 15))
-        left_container.pack_propagate(False)
-
-        canvas = tk.Canvas(left_container, bg="#1e1e1e", highlightthickness=0, width=325)
-        scrollbar = ttk.Scrollbar(left_container, orient="vertical", command=canvas.yview)
-        left_panel = ttk.Frame(canvas)
-
-        left_panel.bind(
-            "<Configure>",
-            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        style.configure(
+            "Horizontal.TProgressbar", 
+            troughcolor=BG_CARD, 
+            background=ACCENT_BLUE, 
+            bordercolor=BORDER_CARD, 
+            lightcolor=ACCENT_BLUE, 
+            darkcolor=ACCENT_BLUE
         )
-        canvas.create_window((0, 0), window=left_panel, anchor="nw", width=320)
-        canvas.configure(yscrollcommand=scrollbar.set)
 
-        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        # Main horizontal container (zero scrollbars needed)
+        main_frame = tk.Frame(self, bg=BG_MAIN, padx=12, pady=10)
+        main_frame.pack(fill=tk.BOTH, expand=True)
 
-        def _on_mousewheel(event):
-            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
-        canvas.bind_all("<MouseWheel>", _on_mousewheel)
-        
-        # Right Panel (Metrics & Matplotlib Plots)
-        right_panel = ttk.Frame(main_frame)
-        right_panel.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
-        
-        # --- Section 1: Model & Training Configuration ---
-        settings_lbl = ttk.Label(left_panel, text="Training Configuration", style="Header.TLabel")
-        settings_lbl.pack(pady=(0, 6), anchor=tk.W)
-        
+        # =========================================================================
+        # LEFT PANEL: Parameters & Controls (Card-Based Layout, No Scrollbar)
+        # =========================================================================
+        left_panel = tk.Frame(main_frame, bg=BG_MAIN, width=335)
+        left_panel.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 12))
+        left_panel.pack_propagate(False)
+
+        # --- Card 1: Model & Training Configuration ---
+        c1 = self.create_card(left_panel)
+        c1.pack(fill=tk.X, pady=(0, 10))
+
+        c1_header = tk.Frame(c1, bg=BG_CARD)
+        c1_header.pack(fill=tk.X, pady=(0, 8))
+        tk.Label(c1_header, text="MODEL CONFIGURATION", font=(self.font_family, 9, "bold"), fg=BORDER_FOCUS, bg=BG_CARD).pack(side=tk.LEFT)
+        tk.Label(c1_header, text="● MLP 128", font=(self.font_family, 7, "bold"), fg=TEXT_SUB, bg=BG_CARD).pack(side=tk.RIGHT)
+
         self.epochs_var = tk.StringVar(value="200")
         self.batch_size_var = tk.StringVar(value="128")
         self.lr_var = tk.StringVar(value="0.0003")
         self.days_var = tk.StringVar(value="All")
         self.n_steps_var = tk.StringVar(value="256")
         self.k_steps_var = tk.StringVar(value="32")
-        
-        self.create_two_inputs_row(left_panel, "Epochs:", self.epochs_var, "Batch Size:", self.batch_size_var)
-        self.create_two_inputs_row(left_panel, "Learning Rate:", self.lr_var, "Days to Load:", self.days_var)
-        self.create_two_inputs_row(left_panel, "Sequence (256):", self.n_steps_var, "Horizon (32):", self.k_steps_var)
-        
+
+        self.create_two_inputs_row(c1, "Epochs:", self.epochs_var, "Batch Size:", self.batch_size_var)
+        self.create_two_inputs_row(c1, "Learning Rate:", self.lr_var, "Days to Load:", self.days_var)
+        self.create_two_inputs_row(c1, "Sequence (256):", self.n_steps_var, "Horizon (32):", self.k_steps_var)
+
         self.early_stopping_var = tk.BooleanVar(value=True)
-        self.es_check = ttk.Checkbutton(left_panel, text="Enable Early Stopping", variable=self.early_stopping_var)
-        self.es_check.pack(anchor=tk.W, pady=(3, 5))
-        
-        self.train_button = ttk.Button(left_panel, text="▶ START TRAINING", command=self.run_training)
-        self.train_button.pack(fill=tk.X, pady=(4, 6))
-
-        # --- Section 2: Fast Oscillator Strategy (Dual Thresholds & Fees) ---
-        sep = ttk.Separator(left_panel, orient='horizontal')
-        sep.pack(fill=tk.X, pady=8)
-
-        strat_lbl = ttk.Label(left_panel, text="Dual-Threshold Strategy", style="SubHeader.TLabel")
-        strat_lbl.pack(pady=(0, 2), anchor=tk.W)
-
-        desc_lbl = ttk.Label(
-            left_panel, 
-            text="Long: Buy > 1+x_in | Exit < 1+x_out\nShort: Sell < 1-x_in | Exit > 1-x_out",
-            font=("Segoe UI", 8),
-            foreground="#aaaaaa"
+        self.es_check = tk.Checkbutton(
+            c1, 
+            text="Enable Early Stopping (patience=15)", 
+            variable=self.early_stopping_var,
+            bg=BG_CARD,
+            fg=TEXT_WHITE,
+            selectcolor=BG_INPUT,
+            activebackground=BG_CARD,
+            activeforeground=TEXT_WHITE,
+            relief="flat",
+            highlightthickness=0,
+            font=(self.font_family, 8)
         )
-        desc_lbl.pack(pady=(0, 4), anchor=tk.W)
+        self.es_check.pack(anchor=tk.W, pady=(4, 8))
+
+        self.train_button = tk.Button(
+            c1,
+            text="▶  START TRAINING",
+            font=(self.font_family, 9, "bold"),
+            bg=ACCENT_BLUE,
+            fg="#ffffff",
+            activebackground=ACCENT_BLUE_HOVER,
+            activeforeground="#ffffff",
+            relief="flat",
+            bd=0,
+            cursor="hand2",
+            pady=7,
+            command=self.run_training
+        )
+        self.train_button.pack(fill=tk.X)
+
+        # --- Card 2: Fast Oscillator Strategy (VectorBT) ---
+        c2 = self.create_card(left_panel)
+        c2.pack(fill=tk.X, pady=(0, 10))
+
+        c2_header = tk.Frame(c2, bg=BG_CARD)
+        c2_header.pack(fill=tk.X, pady=(0, 2))
+        tk.Label(c2_header, text="FAST OSCILLATOR STRATEGY", font=(self.font_family, 9, "bold"), fg=ACCENT_PURPLE, bg=BG_CARD).pack(side=tk.LEFT)
+        tk.Label(c2_header, text="● VectorBT", font=(self.font_family, 7, "bold"), fg=TEXT_SUB, bg=BG_CARD).pack(side=tk.RIGHT)
+
+        rule_lbl = tk.Label(
+            c2, 
+            text="Long: Buy > 1+x_in  |  Exit < 1+x_out\nShort: Sell < 1-x_in  |  Exit > 1-x_out", 
+            font=(self.font_family, 7), 
+            fg=TEXT_SUB, 
+            bg=BG_CARD, 
+            justify=tk.LEFT
+        )
+        rule_lbl.pack(anchor=tk.W, pady=(0, 6))
 
         self.x_entry_var = tk.StringVar(value="0.05")
         self.x_exit_var = tk.StringVar(value="-0.02")
         self.fees_var = tk.StringVar(value="0.1")
 
-        self.create_two_inputs_row(left_panel, "Entry x_in (e.g. 0.05):", self.x_entry_var, "Exit x_out (e.g. -0.02):", self.x_exit_var)
-        self.create_input_field(left_panel, "Fees per Trade (%):", self.fees_var)
+        self.create_two_inputs_row(c2, "Entry x_in (e.g. 0.05):", self.x_entry_var, "Exit x_out (e.g. -0.02):", self.x_exit_var)
+        self.create_single_input_row(c2, "Fees per Trade (%):", self.fees_var)
 
-        # Quick preset buttons
-        preset_lbl = ttk.Label(left_panel, text="Quick Presets (Entry / Exit):", font=("Segoe UI", 8), foreground="#aaaaaa")
-        preset_lbl.pack(pady=(4, 2), anchor=tk.W)
+        # Quick Presets
+        tk.Label(c2, text="Quick Presets (Entry / Exit):", font=(self.font_family, 7, "bold"), fg=TEXT_MUTED, bg=BG_CARD).pack(anchor=tk.W, pady=(6, 2))
+        
+        p_row1 = tk.Frame(c2, bg=BG_CARD)
+        p_row1.pack(fill=tk.X, pady=1)
+        self.create_preset_btn(p_row1, "0.01 / 0.005", "0.01", "0.005").pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 2))
+        self.create_preset_btn(p_row1, "0.008 / 0.003", "0.008", "0.003").pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(2, 0))
 
-        preset_frame1 = ttk.Frame(left_panel)
-        preset_frame1.pack(fill=tk.X, pady=1)
-        ttk.Button(preset_frame1, text="0.01 / 0.005", width=11, command=lambda: self.set_thresholds("0.01", "0.005")).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=1)
-        ttk.Button(preset_frame1, text="0.008 / 0.003", width=11, command=lambda: self.set_thresholds("0.008", "0.003")).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=1)
+        p_row2 = tk.Frame(c2, bg=BG_CARD)
+        p_row2.pack(fill=tk.X, pady=1)
+        self.create_preset_btn(p_row2, "0.015 / 0.008", "0.015", "0.008").pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 2))
+        self.create_preset_btn(p_row2, "0.02 / 0.01", "0.02", "0.01").pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(2, 0))
 
-        preset_frame2 = ttk.Frame(left_panel)
-        preset_frame2.pack(fill=tk.X, pady=1)
-        ttk.Button(preset_frame2, text="0.015 / 0.008", width=11, command=lambda: self.set_thresholds("0.015", "0.008")).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=1)
-        ttk.Button(preset_frame2, text="0.02 / 0.01", width=11, command=lambda: self.set_thresholds("0.02", "0.01")).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=1)
-
-        self.recalc_button = ttk.Button(
-            left_panel, 
-            text="⚡ RECALCULATE BACKTEST", 
+        self.recalc_button = tk.Button(
+            c2,
+            text="⚡  RECALCULATE BACKTEST",
+            font=(self.font_family, 9, "bold"),
+            bg=ACCENT_PURPLE,
+            fg="#ffffff",
+            activebackground=ACCENT_PURPLE_HOVER,
+            activeforeground="#ffffff",
+            relief="flat",
+            bd=0,
+            cursor="hand2",
+            pady=7,
             command=self.run_recalculate_backtest
         )
-        self.recalc_button.pack(fill=tk.X, pady=(8, 6))
-        
-        # --- Top Header & Metrics Bar (Right Panel) ---
-        header_frame = ttk.Frame(right_panel)
-        header_frame.pack(fill=tk.X, pady=(0, 10))
+        self.recalc_button.pack(fill=tk.X, pady=(8, 0))
 
-        title_lbl = ttk.Label(header_frame, text="128-Candle MLP Oscillator & Backtesting Engine", style="Header.TLabel")
-        title_lbl.pack(side=tk.LEFT)
-        
-        metrics_frame = ttk.Frame(right_panel)
-        metrics_frame.pack(fill=tk.X, pady=5)
-        
-        self.epoch_label = ttk.Label(metrics_frame, text="Epoch: N/A", font=("Segoe UI", 11, "bold"))
-        self.epoch_label.pack(side=tk.LEFT, padx=10)
-        
-        self.return_label = ttk.Label(metrics_frame, text="Return: 0.00%", font=("Segoe UI", 11, "bold"), foreground="#4caf50")
-        self.return_label.pack(side=tk.LEFT, padx=10)
+        # --- Card 3: Hardware & Partition Status ---
+        c3 = self.create_card(left_panel)
+        c3.pack(fill=tk.X)
 
-        self.bh_label = ttk.Label(metrics_frame, text="Buy & Hold: 0.00%", font=("Segoe UI", 11, "bold"), foreground="#f59e0b")
-        self.bh_label.pack(side=tk.LEFT, padx=10)
+        device_str, device_color = get_device_info()
+        c3_header = tk.Frame(c3, bg=BG_CARD)
+        c3_header.pack(fill=tk.X)
+        tk.Label(c3_header, text=f"● {device_str}", font=(self.font_family, 8, "bold"), fg=device_color, bg=BG_CARD).pack(side=tk.LEFT)
 
-        self.sharpe_label = ttk.Label(metrics_frame, text="Sharpe: 0.00", font=("Segoe UI", 11, "bold"), foreground="#e040fb")
-        self.sharpe_label.pack(side=tk.LEFT, padx=10)
+        tk.Label(
+            c3, 
+            text="Data: 80% Train | 20% Out-of-sample Test\nModel: 128-Candle Ratio Oscillator", 
+            font=(self.font_family, 7), 
+            fg=TEXT_SUB, 
+            bg=BG_CARD, 
+            justify=tk.LEFT
+        ).pack(anchor=tk.W, pady=(3, 0))
 
-        self.winrate_label = ttk.Label(metrics_frame, text="Win Rate: 0.00%", font=("Segoe UI", 11, "bold"), foreground="#00e676")
-        self.winrate_label.pack(side=tk.LEFT, padx=10)
+        # =========================================================================
+        # RIGHT PANEL: Top Header, Modern KPI Badges & Matplotlib Charts
+        # =========================================================================
+        right_panel = tk.Frame(main_frame, bg=BG_MAIN)
+        right_panel.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
 
-        self.trades_label = ttk.Label(metrics_frame, text="Trades: 0", font=("Segoe UI", 11, "bold"), foreground="#00d2ff")
-        self.trades_label.pack(side=tk.LEFT, padx=10)
+        # Header Title Bar
+        header_frame = tk.Frame(right_panel, bg=BG_MAIN)
+        header_frame.pack(fill=tk.X, pady=(0, 6))
 
-        self.max_dd_label = ttk.Label(metrics_frame, text="Max DD: 0.00%", font=("Segoe UI", 11, "bold"), foreground="#ff5252")
-        self.max_dd_label.pack(side=tk.LEFT, padx=10)
+        title_left = tk.Frame(header_frame, bg=BG_MAIN)
+        title_left.pack(side=tk.LEFT)
+        tk.Label(title_left, text="NEUROTRADE AI", font=(self.font_family, 13, "bold"), fg=TEXT_WHITE, bg=BG_MAIN).pack(side=tk.LEFT)
+        tk.Label(title_left, text=" | 128-Candle MLP Oscillator & Strategy Terminal", font=(self.font_family, 10), fg=TEXT_SUB, bg=BG_MAIN).pack(side=tk.LEFT, padx=6)
 
-        self.progress = ttk.Progressbar(metrics_frame, mode='indeterminate', length=120)
+        header_right = tk.Frame(header_frame, bg=BG_MAIN)
+        header_right.pack(side=tk.RIGHT)
+        self.progress = ttk.Progressbar(header_right, mode='indeterminate', length=140)
 
-        # Plot area (3 Subplots: Price, Oscillator, Equity)
-        plot_frame = tk.Frame(right_panel, bg="#1e1e1e")
+        # KPI Metric Cards Bar (7 Cards)
+        metrics_bar = tk.Frame(right_panel, bg=BG_MAIN)
+        metrics_bar.pack(fill=tk.X, pady=(0, 8))
+
+        kpis = [
+            ("EPOCH", "N/A", TEXT_MUTED),
+            ("STRATEGY RETURN", "+0.00%", ACCENT_GREEN),
+            ("BUY & HOLD BTC", "+0.00%", ACCENT_AMBER),
+            ("SHARPE RATIO", "0.00", ACCENT_PURPLE),
+            ("WIN RATE", "0.0%", ACCENT_CYAN),
+            ("TOTAL TRADES", "0", BORDER_FOCUS),
+            ("MAX DRAWDOWN", "0.00%", ACCENT_ROSE),
+        ]
+
+        self.kpi_labels = {}
+        for key, default_val, default_color in kpis:
+            card = tk.Frame(metrics_bar, bg=BG_CARD, highlightbackground=BORDER_CARD, highlightthickness=1, padx=8, pady=5)
+            card.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=2)
+            
+            lbl_title = tk.Label(card, text=key, font=(self.font_family, 7, "bold"), fg=TEXT_SUB, bg=BG_CARD)
+            lbl_title.pack(anchor=tk.W)
+            
+            lbl_val = tk.Label(card, text=default_val, font=(self.font_family, 11, "bold"), fg=default_color, bg=BG_CARD)
+            lbl_val.pack(anchor=tk.W, pady=(1, 0))
+            self.kpi_labels[key] = lbl_val
+
+        # Aliases for backward compatibility
+        self.epoch_label = self.kpi_labels["EPOCH"]
+        self.return_label = self.kpi_labels["STRATEGY RETURN"]
+        self.bh_label = self.kpi_labels["BUY & HOLD BTC"]
+        self.sharpe_label = self.kpi_labels["SHARPE RATIO"]
+        self.winrate_label = self.kpi_labels["WIN RATE"]
+        self.trades_label = self.kpi_labels["TOTAL TRADES"]
+        self.max_dd_label = self.kpi_labels["MAX DRAWDOWN"]
+
+        # Matplotlib Plot Canvas
+        plot_frame = tk.Frame(right_panel, bg=BG_MAIN)
         plot_frame.pack(fill=tk.BOTH, expand=True)
 
         plt.style.use('dark_background')
@@ -171,39 +292,61 @@ class App(tk.Tk):
             gridspec_kw={'height_ratios': [2.2, 1.2, 1.2]},
             sharex=True
         )
-        self.fig.patch.set_facecolor('#1e1e1e')
+        self.fig.patch.set_facecolor(BG_MAIN)
         for ax in [self.ax1, self.ax2, self.ax3]:
-            ax.set_facecolor('#2d2d2d')
-            ax.grid(color='#444444', alpha=0.3)
-        
+            ax.set_facecolor(BG_CARD)
+            ax.grid(color=BORDER_CARD, alpha=0.6, linestyle='--')
+            for spine in ax.spines.values():
+                spine.set_color(BORDER_CARD)
+            ax.tick_params(colors=TEXT_MUTED, labelsize=8)
+
         self.canvas = FigureCanvasTkAgg(self.fig, master=plot_frame)
         self.canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
-        # Start listening to UI queue and attempt initial chart load
-        self.after(100, self.check_queue)
-        self.after(600, self.initial_load_backtest)
+        # Queue checking and initial cached backtest load
+        self._check_queue_id = self.after(100, self.check_queue)
+        self._initial_load_id = self.after(600, self.initial_load_backtest)
+
+    def create_card(self, parent):
+        return tk.Frame(parent, bg=BG_CARD, highlightbackground=BORDER_CARD, highlightthickness=1, padx=12, pady=10)
 
     def create_two_inputs_row(self, parent, label1, var1, label2, var2):
-        row_frame = ttk.Frame(parent)
+        row_frame = tk.Frame(parent, bg=BG_CARD)
         row_frame.pack(fill=tk.X, pady=2)
-        
-        col1 = ttk.Frame(row_frame)
-        col1.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
-        ttk.Label(col1, text=label1, font=("Segoe UI", 8)).pack(anchor=tk.W)
-        ttk.Entry(col1, textvariable=var1, font=("Segoe UI", 9)).pack(fill=tk.X)
-        
-        col2 = ttk.Frame(row_frame)
-        col2.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(4, 0))
-        ttk.Label(col2, text=label2, font=("Segoe UI", 8)).pack(anchor=tk.W)
-        ttk.Entry(col2, textvariable=var2, font=("Segoe UI", 9)).pack(fill=tk.X)
 
-    def create_input_field(self, parent, label_text, var):
-        frame = ttk.Frame(parent)
+        col1 = tk.Frame(row_frame, bg=BG_CARD)
+        col1.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 3))
+        tk.Label(col1, text=label1, font=(self.font_family, 7, "bold"), fg=TEXT_MUTED, bg=BG_CARD).pack(anchor=tk.W)
+        ModernEntry(col1, textvariable=var1, font_family=self.font_family).pack(fill=tk.X, pady=(2, 0))
+
+        col2 = tk.Frame(row_frame, bg=BG_CARD)
+        col2.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(3, 0))
+        tk.Label(col2, text=label2, font=(self.font_family, 7, "bold"), fg=TEXT_MUTED, bg=BG_CARD).pack(anchor=tk.W)
+        ModernEntry(col2, textvariable=var2, font_family=self.font_family).pack(fill=tk.X, pady=(2, 0))
+
+    def create_single_input_row(self, parent, label_text, var):
+        frame = tk.Frame(parent, bg=BG_CARD)
         frame.pack(fill=tk.X, pady=2)
-        lbl = ttk.Label(frame, text=label_text, font=("Segoe UI", 8))
-        lbl.pack(side=tk.TOP, anchor=tk.W)
-        entry = ttk.Entry(frame, textvariable=var, font=("Segoe UI", 9))
-        entry.pack(side=tk.TOP, fill=tk.X)
+        tk.Label(frame, text=label_text, font=(self.font_family, 7, "bold"), fg=TEXT_MUTED, bg=BG_CARD).pack(anchor=tk.W)
+        ModernEntry(frame, textvariable=var, font_family=self.font_family).pack(fill=tk.X, pady=(2, 0))
+
+    def create_preset_btn(self, parent, text, in_val, out_val):
+        return tk.Button(
+            parent,
+            text=text,
+            bg=BG_INPUT,
+            fg=TEXT_WHITE,
+            activebackground=BORDER_CARD,
+            activeforeground="#ffffff",
+            relief="flat",
+            bd=0,
+            highlightbackground=BORDER_INPUT,
+            highlightthickness=1,
+            font=(self.font_family, 8),
+            cursor="hand2",
+            pady=3,
+            command=lambda: self.set_thresholds(in_val, out_val)
+        )
 
     def set_thresholds(self, in_val_str, out_val_str):
         self.x_entry_var.set(in_val_str)
@@ -212,12 +355,12 @@ class App(tk.Tk):
 
     def run_training(self):
         """Runs model training in a background daemon thread."""
-        self.train_button.config(state="disabled")
-        self.recalc_button.config(state="disabled")
-        self.progress.pack(side=tk.RIGHT, padx=20)
+        self.train_button.config(state="disabled", bg="#1e293b", cursor="arrow")
+        self.recalc_button.config(state="disabled", bg="#1e293b", cursor="arrow")
+        self.progress.pack(side=tk.RIGHT, padx=10)
         self.progress.start(10)
         print("Starting training process...")
-        
+
         try:
             days_str = self.days_var.get().strip()
             days_to_load = int(days_str) if days_str.isdigit() and int(days_str) > 0 else None
@@ -239,14 +382,19 @@ class App(tk.Tk):
             print("Invalid input parameters. Please check values.")
             self.progress.stop()
             self.progress.pack_forget()
-            self.train_button.config(state="normal")
-            self.recalc_button.config(state="normal")
+            self.train_button.config(state="normal", bg=ACCENT_BLUE, cursor="hand2")
+            self.recalc_button.config(state="normal", bg=ACCENT_PURPLE, cursor="hand2")
             return
-        
-        self.ax1.clear()
-        self.ax2.clear()
-        self.ax3.clear()
-        self.epoch_label.config(text="Epoch: 0")
+
+        for ax in [self.ax1, self.ax2, self.ax3]:
+            ax.clear()
+            ax.set_facecolor(BG_CARD)
+            ax.grid(True, color=BORDER_CARD, alpha=0.6, linestyle='--')
+            for spine in ax.spines.values():
+                spine.set_color(BORDER_CARD)
+            ax.tick_params(colors=TEXT_MUTED, labelsize=8)
+
+        self.kpi_labels["EPOCH"].config(text="0")
         self.canvas.draw()
 
         thread = threading.Thread(target=train_model_with_callback, args=(ui_queue, params))
@@ -278,16 +426,13 @@ class App(tk.Tk):
             print(f"Backtest recalculation error: {e}")
 
     def update_backtest_ui(self, results):
-        """Renders backtest results across all 3 subplots and updates metric labels."""
+        """Renders backtest results across all 3 subplots and updates metric badge cards."""
         if not results:
             return
-        
+
         plot_backtest_results(results, self.fig, self.ax1, self.ax2, self.ax3)
-        for ax in [self.ax1, self.ax2, self.ax3]:
-            ax.set_facecolor('#2d2d2d')
-            ax.grid(color='#444444', alpha=0.3)
         self.canvas.draw()
-        
+
         pf = results['portfolio']
         returns = results.get('returns', 0.0)
         bh_return = results.get('bh_return', 0.0)
@@ -295,24 +440,34 @@ class App(tk.Tk):
         max_dd = results.get('max_drawdown', 0.0)
         total_trades = results.get('total_trades', pf.trades.count())
         winrate = results.get('win_rate', pf.trades.win_rate() * 100 if total_trades > 0 else 0.0)
-        
-        self.return_label.config(
-            text=f"Return: {returns:+.2f}%", 
-            foreground="#4caf50" if returns >= 0 else "#f44336"
+
+        # Update modern KPI badges
+        self.kpi_labels["STRATEGY RETURN"].config(
+            text=f"{returns:+.2f}%", 
+            fg=ACCENT_GREEN if returns >= 0 else ACCENT_ROSE
         )
-        self.bh_label.config(
-            text=f"Buy & Hold: {bh_return:+.2f}%",
-            foreground="#f59e0b"
+        self.kpi_labels["BUY & HOLD BTC"].config(
+            text=f"{bh_return:+.2f}%",
+            fg=ACCENT_AMBER if bh_return >= 0 else ACCENT_ROSE
         )
-        self.sharpe_label.config(
-            text=f"Sharpe: {sharpe:.2f}",
-            foreground="#4caf50" if sharpe >= 1.0 else ("#e040fb" if sharpe >= 0.0 else "#f44336")
+        self.kpi_labels["SHARPE RATIO"].config(
+            text=f"{sharpe:.2f}",
+            fg=ACCENT_GREEN if sharpe >= 1.0 else (ACCENT_PURPLE if sharpe >= 0.0 else ACCENT_ROSE)
         )
-        self.winrate_label.config(text=f"Win Rate: {winrate:.2f}%")
-        self.trades_label.config(text=f"Trades: {total_trades}")
-        self.max_dd_label.config(text=f"Max DD: {max_dd:.2f}%")
+        self.kpi_labels["WIN RATE"].config(
+            text=f"{winrate:.1f}%",
+            fg=ACCENT_CYAN
+        )
+        self.kpi_labels["TOTAL TRADES"].config(
+            text=f"{total_trades}",
+            fg=BORDER_FOCUS
+        )
+        self.kpi_labels["MAX DRAWDOWN"].config(
+            text=f"{max_dd:.2f}%",
+            fg=ACCENT_ROSE if max_dd < 0 else TEXT_MUTED
+        )
         if 'epoch' in results:
-            self.epoch_label.config(text=f"Epoch: {results['epoch']}")
+            self.kpi_labels["EPOCH"].config(text=f"{results['epoch']}", fg=TEXT_WHITE)
 
     def initial_load_backtest(self):
         """Loads and displays existing cached backtest on startup if available."""
@@ -334,34 +489,43 @@ class App(tk.Tk):
             while not ui_queue.empty():
                 message = ui_queue.get_nowait()
                 msg_type = message.get('type')
-    
+
                 if msg_type == 'backtest_update':
                     results = message.get('results')
                     if results:
                         self.update_backtest_ui(results)
                     epoch = message.get('epoch')
                     if epoch is not None:
-                        self.epoch_label.config(text=f"Epoch: {epoch}")
-    
+                        self.kpi_labels["EPOCH"].config(text=f"{epoch}", fg=TEXT_WHITE)
+
                 elif msg_type == 'train_update':
                     epoch = message.get('epoch', 0) + 1
-                    self.epoch_label.config(text=f"Epoch: {epoch}")
-    
+                    self.kpi_labels["EPOCH"].config(text=f"{epoch}", fg=TEXT_WHITE)
+
                 elif msg_type == 'train_finished':
                     print("Training process finished.")
-                    self.train_button.config(state="normal")
-                    self.recalc_button.config(state="normal")
+                    self.train_button.config(state="normal", bg=ACCENT_BLUE, cursor="hand2")
+                    self.recalc_button.config(state="normal", bg=ACCENT_PURPLE, cursor="hand2")
                     self.progress.stop()
                     self.progress.pack_forget()
 
         except Empty:
             pass
         finally:
-            self.after(100, self.check_queue)
-            
+            self._check_queue_id = self.after(100, self.check_queue)
+
     def on_closing(self):
-        import os
         print("Closing application...")
+        if hasattr(self, '_check_queue_id'):
+            try:
+                self.after_cancel(self._check_queue_id)
+            except Exception:
+                pass
+        if hasattr(self, '_initial_load_id'):
+            try:
+                self.after_cancel(self._initial_load_id)
+            except Exception:
+                pass
         self.destroy()
         os._exit(0)
 
