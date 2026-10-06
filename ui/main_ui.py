@@ -72,7 +72,7 @@ class ModernEntry(tk.Entry):
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("NeurotradeAI - 128-Candle Quantitative Dashboard")
+        self.title("NeurotradeAI - Quantitative Dashboard")
         self.geometry("1450x950")
         self.configure(bg=BG_MAIN)
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
@@ -110,7 +110,6 @@ class App(tk.Tk):
         c1_header = tk.Frame(c1, bg=BG_CARD)
         c1_header.pack(fill=tk.X, pady=(0, 8))
         tk.Label(c1_header, text="MODEL CONFIGURATION", font=(self.font_family, 9, "bold"), fg=BORDER_FOCUS, bg=BG_CARD).pack(side=tk.LEFT)
-        tk.Label(c1_header, text="● MLP 128", font=(self.font_family, 7, "bold"), fg=TEXT_SUB, bg=BG_CARD).pack(side=tk.RIGHT)
 
         self.epochs_var = tk.StringVar(value="200")
         self.batch_size_var = tk.StringVar(value="128")
@@ -221,7 +220,7 @@ class App(tk.Tk):
 
         tk.Label(
             c3, 
-            text="Data: 80% Train | 20% Out-of-sample Test\nModel: 128-Candle Ratio Oscillator", 
+            text="Data: 80% Train | 20% Out-of-sample Test",
             font=(self.font_family, 7), 
             fg=TEXT_SUB, 
             bg=BG_CARD, 
@@ -241,7 +240,7 @@ class App(tk.Tk):
         title_left = tk.Frame(header_frame, bg=BG_MAIN)
         title_left.pack(side=tk.LEFT)
         tk.Label(title_left, text="NEUROTRADE AI", font=(self.font_family, 13, "bold"), fg=TEXT_WHITE, bg=BG_MAIN).pack(side=tk.LEFT)
-        tk.Label(title_left, text=" | 128-Candle MLP Oscillator & Strategy Terminal", font=(self.font_family, 10), fg=TEXT_SUB, bg=BG_MAIN).pack(side=tk.LEFT, padx=6)
+        tk.Label(title_left, text=" | MLP Oscillator & Strategy Terminal", font=(self.font_family, 10), fg=TEXT_SUB, bg=BG_MAIN).pack(side=tk.LEFT, padx=6)
 
         header_right = tk.Frame(header_frame, bg=BG_MAIN)
         header_right.pack(side=tk.RIGHT)
