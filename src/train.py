@@ -104,22 +104,31 @@ def train_model_with_callback(queue, params=None):
     model.summary()
 
     # Callbacks
-    ui_callback = UILoggerCallback(queue)
-    model_checkpoint = ModelCheckpoint('best_model.keras', monitor='val_loss', save_best_only=True, verbose=1)
+    model_checkpoint = ModelCheckpoint('best_model.keras', monitor='loss', save_best_only=True, verbose=1)
     backtest_callback = BacktestOnEpochEnd(queue, frequency=1, params=params, test_data=btc_test_data)
-    reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=5, min_lr=0.00001, verbose=1)
+    reduce_lr = ReduceLROnPlateau(monitor='loss', factor=0.5, patience=7, min_lr=0.00001, verbose=1)
+    ui_callback = UILoggerCallback(queue)
 
-    callbacks_list = [ui_callback, model_checkpoint, backtest_callback, reduce_lr]
+    callbacks_list = [model_checkpoint, backtest_callback, reduce_lr]
 
     # Only enable EarlyStopping if explicitly requested in params
     use_early_stopping = params.get('early_stopping', False)
     if use_early_stopping:
         patience = params.get('patience', 15)
-        early_stopping = EarlyStopping(monitor='val_loss', patience=patience, restore_best_weights=True, verbose=1)
+        early_stopping = EarlyStopping(
+            monitor='loss',
+            min_delta=1e-6,
+            patience=patience,
+            restore_best_weights=True,
+            verbose=1
+        )
         callbacks_list.append(early_stopping)
-        print(f"EarlyStopping enabled (patience={patience}).")
+        print(f"EarlyStopping enabled (monitoring 'loss', min_delta=1e-6, patience={patience}).")
     else:
         print(f"EarlyStopping disabled: training will run for the full {epochs} epochs (best weights saved via ModelCheckpoint).")
+
+    # Put UI logger callback last so on_train_end fires after backtest_callback.on_train_end
+    callbacks_list.append(ui_callback)
 
     print(f"Fitting MLP model for {epochs} epochs...")
     model.fit(
@@ -130,3 +139,8 @@ def train_model_with_callback(queue, params=None):
         callbacks=callbacks_list,
         verbose=1
     )
+
+    # Explicitly save final restored model weights to best_model.keras
+    model.save('best_model.keras')
+    print("Model training complete. Best model weights saved to best_model.keras.")
+

@@ -372,6 +372,7 @@ class App(tk.Tk):
                 'k_steps': int(self.k_steps_var.get()),
                 'days_to_load': days_to_load,
                 'early_stopping': self.early_stopping_var.get(),
+                'patience': 15,
                 'x_entry': float(self.x_entry_var.get()),
                 'x_exit': float(self.x_exit_var.get()),
                 'fees_pct': fees_pct,
