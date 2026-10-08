@@ -99,8 +99,10 @@ def train_model_with_callback(queue, params=None):
     print(f"Combined dataset: Training={len(X_train)} samples, Validation={len(X_val)} samples")
     print(f"y_train statistics: Mean={np.mean(y_train):.4f}, Min={np.min(y_train):.4f}, Max={np.max(y_train):.4f}")
 
+    n_models = int(params.get('n_models', getattr(config, 'N_MODELS', 3)))
     # Create MLP model: 2048 -> 1024 -> 512 -> 256 -> 64 -> 16 -> 8 -> 1 (2*sigmoid)
-    model = create_dense_model(input_dim=X_train.shape[1], lr=learning_rate)
+    # Supports single model or multi-model ensemble of n independent branches
+    model = create_dense_model(input_dim=X_train.shape[1], lr=learning_rate, n_models=n_models)
     model.summary()
 
     # Callbacks
@@ -130,12 +132,15 @@ def train_model_with_callback(queue, params=None):
     # Put UI logger callback last so on_train_end fires after backtest_callback.on_train_end
     callbacks_list.append(ui_callback)
 
-    print(f"Fitting MLP model for {epochs} epochs...")
+    y_train_fit = [y_train] * n_models if n_models > 1 else y_train
+    val_data = (X_val, [y_val] * n_models) if n_models > 1 else (X_val, y_val)
+
+    print(f"Fitting MLP model ({n_models} model{'s' if n_models > 1 else ''} in ensemble) for {epochs} epochs...")
     model.fit(
-        X_train, y_train,
+        X_train, y_train_fit,
         epochs=epochs,
         batch_size=batch_size,
-        validation_data=(X_val, y_val),
+        validation_data=val_data,
         callbacks=callbacks_list,
         verbose=1
     )

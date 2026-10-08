@@ -38,6 +38,8 @@ MAX_HOLDING_PERIOD = 32           # Backward compatibility
 EPOCHS = 200
 BATCH_SIZE = 128
 LEARNING_RATE = 0.0003 # Optimal learning rate for deep MLP with bounded sigmoid output
+DEFAULT_N_MODELS = 3   # Default number of models in ensemble (each manages 1/N capital)
+N_MODELS = DEFAULT_N_MODELS
 
 # --- Backtesting parameters ---
 INITIAL_CAPITAL = 10000.0

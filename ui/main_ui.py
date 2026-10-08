@@ -114,13 +114,15 @@ class App(tk.Tk):
         self.epochs_var = tk.StringVar(value="200")
         self.batch_size_var = tk.StringVar(value="128")
         self.lr_var = tk.StringVar(value="0.0003")
+        self.n_models_var = tk.StringVar(value="3")
         self.days_var = tk.StringVar(value="All")
         self.n_steps_var = tk.StringVar(value="256")
         self.k_steps_var = tk.StringVar(value="32")
 
         self.create_two_inputs_row(c1, "Epochs:", self.epochs_var, "Batch Size:", self.batch_size_var)
-        self.create_two_inputs_row(c1, "Learning Rate:", self.lr_var, "Days to Load:", self.days_var)
+        self.create_two_inputs_row(c1, "Learning Rate:", self.lr_var, "Ensemble (n models):", self.n_models_var)
         self.create_two_inputs_row(c1, "Sequence (256):", self.n_steps_var, "Horizon (32):", self.k_steps_var)
+        self.create_single_input_row(c1, "Days to Load:", self.days_var)
 
         self.early_stopping_var = tk.BooleanVar(value=True)
         self.es_check = tk.Checkbutton(
@@ -364,10 +366,15 @@ class App(tk.Tk):
             days_str = self.days_var.get().strip()
             days_to_load = int(days_str) if days_str.isdigit() and int(days_str) > 0 else None
             fees_pct = float(self.fees_var.get())
+            n_models_val = int(self.n_models_var.get()) if self.n_models_var.get().isdigit() else 3
+            if n_models_val < 1:
+                n_models_val = 1
+
             params = {
                 'epochs': int(self.epochs_var.get()),
                 'batch_size': int(self.batch_size_var.get()),
                 'learning_rate': float(self.lr_var.get()),
+                'n_models': n_models_val,
                 'n_steps': int(self.n_steps_var.get()),
                 'k_steps': int(self.k_steps_var.get()),
                 'days_to_load': days_to_load,
@@ -438,8 +445,8 @@ class App(tk.Tk):
         bh_return = results.get('bh_return', 0.0)
         sharpe = results.get('sharpe_ratio', 0.0)
         max_dd = results.get('max_drawdown', 0.0)
-        total_trades = results.get('total_trades', pf.trades.count())
-        winrate = results.get('win_rate', pf.trades.win_rate() * 100 if total_trades > 0 else 0.0)
+        total_trades = results.get('total_trades', int(pf.trades.count().sum()) if hasattr(pf.trades.count(), 'sum') else int(pf.trades.count()))
+        winrate = results.get('win_rate', 0.0)
 
         # Update modern KPI badges
         self.kpi_labels["STRATEGY RETURN"].config(

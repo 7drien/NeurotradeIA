@@ -50,7 +50,9 @@ class BacktestOnEpochEnd(Callback):
             
             if backtest_results:
                 preds = backtest_results['preds']
-                print(f"Epoch {epoch + 1}: Indicator successfully computed on {len(preds)} test candles (20% end of BTC-USD). Predictions range: [{preds.min():.4f}, {preds.max():.4f}]")
+                p_min = float(preds.values.min()) if hasattr(preds, 'values') else float(np.min(preds))
+                p_max = float(preds.values.max()) if hasattr(preds, 'values') else float(np.max(preds))
+                print(f"Epoch {epoch + 1}: Indicator successfully computed on {len(preds)} test candles (20% end of BTC-USD). Predictions range: [{p_min:.4f}, {p_max:.4f}]")
                 backtest_results['epoch'] = epoch + 1
                 # Send the ENTIRE results dictionary to the UI
                 self.queue.put({'type': 'backtest_update', 'results': backtest_results, 'epoch': epoch + 1})

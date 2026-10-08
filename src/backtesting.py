@@ -85,9 +85,18 @@ def get_or_compute_predictions(params=None, force_recompute=False, model=None, t
             return None
 
     print(f"Computing model output oscillator for {len(X_test)} candles (20% end of BTC-USD)...")
-    preds = model.predict(X_test, verbose=0).flatten()
+    preds_raw = model.predict(X_test, verbose=0)
 
-    pred_series = pd.Series(preds, index=test_indices)
+    if isinstance(preds_raw, list) and len(preds_raw) > 1:
+        n_models = len(preds_raw)
+        preds_dict = {f"M{i+1}": preds_raw[i].flatten() for i in range(n_models)}
+        pred_series = pd.DataFrame(preds_dict, index=test_indices)
+        preds_mean = pred_series.mean(axis=1)
+        print(f"Computed {n_models}-model ensemble oscillators. Mean range: [{preds_mean.min():.4f}, {preds_mean.max():.4f}]")
+    else:
+        preds_arr = preds_raw[0].flatten() if isinstance(preds_raw, list) else preds_raw.flatten()
+        pred_series = pd.Series(preds_arr, index=test_indices)
+        n_models = 1
 
     cache_data = {
         "price": price,
@@ -95,13 +104,14 @@ def get_or_compute_predictions(params=None, force_recompute=False, model=None, t
         "test_indices": test_indices,
         "y_true": y_true,
         "n_steps": n_steps,
-        "k_steps": k_steps
+        "k_steps": k_steps,
+        "n_models": n_models
     }
 
     _CACHED_PREDICTIONS = cache_data
     os.makedirs(os.path.dirname(PREDICTIONS_CACHE_FILE), exist_ok=True)
     pd.to_pickle(cache_data, PREDICTIONS_CACHE_FILE)
-    print(f"Saved {len(preds)} candle predictions to {PREDICTIONS_CACHE_FILE}")
+    print(f"Saved {len(pred_series)} candle predictions ({n_models} models) to {PREDICTIONS_CACHE_FILE}")
 
     return cache_data
 
@@ -138,6 +148,14 @@ def run_backtest_with_threshold(x_entry=DEFAULT_X_ENTRY, x_exit=DEFAULT_X_EXIT, 
     short_entries = preds < sell_entry
     short_exits = preds > sell_exit
 
+    is_multi_model = isinstance(preds, pd.DataFrame)
+    if is_multi_model:
+        n_models = preds.shape[1]
+        init_cash_each = INITIAL_CAPITAL / n_models
+    else:
+        n_models = 1
+        init_cash_each = INITIAL_CAPITAL
+
     pf = vbt.Portfolio.from_signals(
         price,
         entries=entries,
@@ -145,7 +163,7 @@ def run_backtest_with_threshold(x_entry=DEFAULT_X_ENTRY, x_exit=DEFAULT_X_EXIT, 
         short_entries=short_entries,
         short_exits=short_exits,
         fees=fees,
-        init_cash=INITIAL_CAPITAL,
+        init_cash=init_cash_each,
         freq='1h'
     )
 
@@ -157,18 +175,48 @@ def run_backtest_with_threshold(x_entry=DEFAULT_X_ENTRY, x_exit=DEFAULT_X_EXIT, 
         except Exception:
             return default
 
-    final_val = float(pf.value().iloc[-1])
-    ret = _safe_float((final_val - INITIAL_CAPITAL) / INITIAL_CAPITAL * 100.0)
+    if is_multi_model:
+        combined_equity = pf.value().sum(axis=1)
+        final_val = float(combined_equity.iloc[-1])
+        ret = _safe_float((final_val - INITIAL_CAPITAL) / INITIAL_CAPITAL * 100.0)
+        total_trades = int(pf.trades.count().sum())
+        
+        # Combined portfolio hourly returns and Sharpe ratio
+        combined_rets = combined_equity.pct_change().fillna(0.0)
+        c_std = float(combined_rets.std(ddof=1))
+        sharpe = _safe_float((float(combined_rets.mean()) / c_std * np.sqrt(8760.0))) if (total_trades > 0 and c_std > 1e-8) else 0.0
+        
+        # Combined Max Drawdown
+        peak = combined_equity.cummax()
+        dd = (combined_equity - peak) / (peak + 1e-8)
+        max_dd = _safe_float(float(dd.min()) * 100.0)
+        
+        winrate = _safe_float(float(pf.trades.win_rate().mean()) * 100.0) if total_trades > 0 else 0.0
+        profit_factor = _safe_float(float(pf.trades.profit_factor().mean())) if total_trades > 0 else 0.0
+    else:
+        combined_equity = pf.value()
+        final_val = float(combined_equity.iloc[-1])
+        ret = _safe_float((final_val - INITIAL_CAPITAL) / INITIAL_CAPITAL * 100.0)
+        total_trades = int(pf.trades.count())
+        sharpe = _safe_float(pf.sharpe_ratio()) if total_trades > 0 else 0.0
+        max_dd = _safe_float(pf.max_drawdown() * 100.0)
+        winrate = _safe_float(pf.trades.win_rate() * 100.0) if total_trades > 0 else 0.0
+        profit_factor = _safe_float(pf.trades.profit_factor()) if total_trades > 0 else 0.0
+
     bh_ret = _safe_float((price.iloc[-1] - price.iloc[0]) / price.iloc[0] * 100.0)
-    sharpe = _safe_float(pf.sharpe_ratio())
-    max_dd = _safe_float(pf.max_drawdown() * 100.0)
-    total_trades = int(pf.trades.count())
-    winrate = _safe_float(pf.trades.win_rate() * 100.0) if total_trades > 0 else 0.0
-    profit_factor = _safe_float(pf.trades.profit_factor()) if total_trades > 0 else 0.0
     
+    # Buy & Hold BTC Sharpe Ratio for baseline comparison
+    bh_rets = price.pct_change().dropna()
+    bh_std = float(bh_rets.std(ddof=1))
+    bh_sharpe = _safe_float((float(bh_rets.mean()) / bh_std * np.sqrt(8760.0))) if bh_std > 1e-8 else 0.0
+
     return {
         "portfolio": pf,
+        "combined_equity": combined_equity,
+        "is_multi_model": is_multi_model,
+        "n_models": n_models,
         "initial_capital": INITIAL_CAPITAL,
+        "init_cash_each": init_cash_each,
         "price": price,
         "preds": preds,
         "test_indices": test_indices,
@@ -183,6 +231,7 @@ def run_backtest_with_threshold(x_entry=DEFAULT_X_ENTRY, x_exit=DEFAULT_X_EXIT, 
         "returns": ret,
         "bh_return": bh_ret,
         "sharpe_ratio": sharpe,
+        "bh_sharpe": bh_sharpe,
         "max_drawdown": max_dd,
         "win_rate": winrate,
         "total_trades": total_trades,
@@ -234,6 +283,7 @@ def plot_backtest_results(results, fig=None, ax1=None, ax2=None, ax3=None):
     ret = results.get("returns", (pf.value().iloc[-1] - initial_capital) / initial_capital * 100.0)
     bh_ret = results.get("bh_return", (results["price"].iloc[-1] - results["price"].iloc[0]) / results["price"].iloc[0] * 100.0)
     sharpe = results.get("sharpe_ratio", 0.0)
+    bh_sharpe = results.get("bh_sharpe", 0.0)
     max_dd = results.get("max_drawdown", 0.0)
     winrate = results.get("win_rate", 0.0)
     profit_factor = results.get("profit_factor", 0.0)
@@ -257,15 +307,18 @@ def plot_backtest_results(results, fig=None, ax1=None, ax2=None, ax3=None):
                 spine.set_color('#262b3a')
             ax.tick_params(colors='#94a3b8', labelsize=8)
         
+    is_multi_model = results.get("is_multi_model", isinstance(preds_series, pd.DataFrame))
+    n_models = results.get("n_models", preds_series.shape[1] if is_multi_model else 1)
     test_indices = pf.close.index
     actual_prices = pf.close.values
-    portfolio_value = pf.value().values
+    portfolio_value = results.get("combined_equity", pf.value().sum(axis=1) if is_multi_model else pf.value()).values
+    total_trades = results.get("total_trades", int(pf.trades.count().sum()) if hasattr(pf.trades.count(), 'sum') else int(pf.trades.count()))
     
     # --- 1. Price and Trade Signals ---
     ax1.plot(test_indices, actual_prices, label='Price (USD)', color='#38bdf8', linewidth=1.2, zorder=1)
     
     trades = pf.trades
-    if trades.count() > 0:
+    if total_trades > 0:
         records = trades.records_readable
         entries_idx = records.get('Entry Timestamp', records.get('Entry Index'))
         entry_prices = records.get('Avg Entry Price', records.get('Entry Price'))
@@ -285,19 +338,30 @@ def plot_backtest_results(results, fig=None, ax1=None, ax2=None, ax3=None):
             ax1.scatter(exit_idx[short_mask], exit_prices[short_mask], label=f'Exit Short (> {sell_exit:.3f})', marker='x', color='#f87171', s=65, zorder=5)
             
     fees_pct = results.get("fees_pct", results.get("fees", TRANSACTION_COST) * 100.0)
-    ax1.set_title(f'Market Price & Trade Executions (Entry x={x_entry:.3f}, Exit x={x_exit:.3f}, Fee={fees_pct:.2f}% | Total Trades: {trades.count()})', fontsize=11, color='#f1f5f9', fontweight='bold')
+    model_info_str = f"Ensemble ({n_models} models)" if is_multi_model else "Single Model"
+    ax1.set_title(f'Market Price & Executions [{model_info_str}] (x_in={x_entry:.3f}, x_out={x_exit:.3f}, Fee={fees_pct:.2f}% | Trades: {total_trades})', fontsize=11, color='#f1f5f9', fontweight='bold')
     ax1.set_ylabel('Price (USD)', fontsize=9, color='#94a3b8')
     ax1.legend(loc='upper left', fontsize=8, facecolor='#181b24', edgecolor='#262b3a', labelcolor='#e2e8f0')
     
     # --- 2. Model Oscillator with 1±x_entry and 1±x_exit Thresholds ---
     if ax3 is not None and preds_series is not None:
-        ax2.plot(test_indices, preds_series.values, label='Model Oscillator', color='#06b6d4', linewidth=1.0)
+        if is_multi_model and isinstance(preds_series, pd.DataFrame):
+            palette = ['#38bdf8', '#c084fc', '#f59e0b', '#34d399', '#f43f5e', '#a78bfa']
+            for i, col in enumerate(preds_series.columns):
+                c = palette[i % len(palette)]
+                ax2.plot(test_indices, preds_series[col].values, label=f'{col}', color=c, alpha=0.5, linewidth=0.8)
+            mean_preds = preds_series.mean(axis=1)
+            ax2.plot(test_indices, mean_preds.values, label='Ensemble Mean', color='#06b6d4', linewidth=1.5)
+        else:
+            p_vals = preds_series.values if hasattr(preds_series, 'values') else preds_series
+            ax2.plot(test_indices, p_vals, label='Model Oscillator', color='#06b6d4', linewidth=1.0)
+
         ax2.axhline(buy_entry, color='#22c55e', linestyle='--', label=f'Buy Entry ({buy_entry:.4f})', alpha=0.9)
         ax2.axhline(buy_exit, color='#4ade80', linestyle=':', label=f'Buy Exit ({buy_exit:.4f})', alpha=0.9)
         ax2.axhline(1.0, color='#64748b', linestyle=':', label='Neutral (1.0)', alpha=0.6)
         ax2.axhline(sell_exit, color='#f87171', linestyle=':', label=f'Sell Exit ({sell_exit:.4f})', alpha=0.9)
         ax2.axhline(sell_entry, color='#ef4444', linestyle='--', label=f'Sell Entry ({sell_entry:.4f})', alpha=0.9)
-        ax2.set_title(f'Oscillator with Hysteresis Bands (x_in={x_entry:.3f}, x_out={x_exit:.3f})', fontsize=11, color='#f1f5f9', fontweight='bold')
+        ax2.set_title(f'Oscillators with Hysteresis Bands (x_in={x_entry:.3f}, x_out={x_exit:.3f})', fontsize=11, color='#f1f5f9', fontweight='bold')
         ax2.set_ylabel('Output', fontsize=9, color='#94a3b8')
         ax2.legend(loc='upper left', fontsize=8, facecolor='#181b24', edgecolor='#262b3a', labelcolor='#e2e8f0')
         equity_ax = ax3
@@ -307,10 +371,24 @@ def plot_backtest_results(results, fig=None, ax1=None, ax2=None, ax3=None):
     # --- 3. Portfolio Equity vs Buy & Hold Curve ---
     bh_equity = (actual_prices / (actual_prices[0] + 1e-8)) * initial_capital
 
-    equity_ax.plot(test_indices, portfolio_value, label=f'Strategy Equity ({ret:+.2f}%)', color='#a855f7', linewidth=1.5, zorder=3)
+    if is_multi_model:
+        equity_ax.plot(test_indices, portfolio_value, label=f'Ensemble Equity ({ret:+.2f}%)', color='#a855f7', linewidth=1.8, zorder=4)
+        sub_palette = ['#38bdf8', '#c084fc', '#f59e0b', '#34d399', '#f43f5e', '#a78bfa']
+        init_each = results.get("init_cash_each", initial_capital / n_models)
+        for i, col in enumerate(pf.value().columns):
+            sub_col_val = pf.value()[col]
+            sub_ret = (sub_col_val.iloc[-1] - sub_col_val.iloc[0]) / (sub_col_val.iloc[0] + 1e-8) * 100.0
+            sub_norm = (sub_col_val / (init_each + 1e-8)) * initial_capital
+            sc = sub_palette[i % len(sub_palette)]
+            equity_ax.plot(test_indices, sub_norm.values, label=f'{col} ({sub_ret:+.1f}%)', color=sc, linestyle=':', linewidth=0.9, alpha=0.7, zorder=2)
+    else:
+        equity_ax.plot(test_indices, portfolio_value, label=f'Strategy Equity ({ret:+.2f}%)', color='#a855f7', linewidth=1.5, zorder=3)
+
     equity_ax.plot(test_indices, bh_equity, label=f'Buy & Hold BTC ({bh_ret:+.2f}%)', color='#f59e0b', linestyle='--', linewidth=1.2, alpha=0.85, zorder=2)
     equity_ax.axhline(initial_capital, color='#64748b', linestyle=':', label='Initial Capital', alpha=0.5, zorder=1)
-    equity_ax.set_title(f'Portfolio Equity vs Buy & Hold (Sharpe: {sharpe:.2f} | Max DD: {max_dd:.2f}%)', fontsize=11, color='#f1f5f9', fontweight='bold')
+    
+    title_prefix = f"Ensemble Equity ({n_models} models)" if is_multi_model else "Portfolio Equity"
+    equity_ax.set_title(f'{title_prefix} vs Buy & Hold (Sharpe: {sharpe:.2f} vs BTC: {bh_sharpe:.2f} | Max DD: {max_dd:.2f}%)', fontsize=11, color='#f1f5f9', fontweight='bold')
     equity_ax.set_ylabel('Equity (USD)', fontsize=9, color='#94a3b8')
     equity_ax.set_xlabel('Date', fontsize=9, color='#94a3b8')
     equity_ax.legend(loc='upper left', fontsize=8, facecolor='#181b24', edgecolor='#262b3a', labelcolor='#e2e8f0')
@@ -319,6 +397,6 @@ def plot_backtest_results(results, fig=None, ax1=None, ax2=None, ax3=None):
     if new_figure:
         plt.show()
     
-    print(f"\n--- Backtest Results (x_entry={x_entry:.4f}, x_exit={x_exit:.4f}, fee={fees_pct:.2f}%) ---")
-    print(f"Strategy Return: {ret:+.2f}% | Buy & Hold BTC: {bh_ret:+.2f}% | Sharpe: {sharpe:.2f}")
-    print(f"Win Rate: {winrate:.2f}% | Max Drawdown: {max_dd:.2f}% | Trades: {trades.count()} | Profit Factor: {profit_factor:.2f}")
+    print(f"\n--- Backtest Results ({model_info_str}, x_entry={x_entry:.4f}, x_exit={x_exit:.4f}, fee={fees_pct:.2f}%) ---")
+    print(f"Strategy Return: {ret:+.2f}% (Sharpe: {sharpe:.2f}) | Buy & Hold BTC: {bh_ret:+.2f}% (Sharpe: {bh_sharpe:.2f})")
+    print(f"Win Rate: {winrate:.2f}% | Max Drawdown: {max_dd:.2f}% | Trades: {total_trades} | Profit Factor: {profit_factor:.2f}")
