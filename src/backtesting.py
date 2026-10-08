@@ -210,6 +210,22 @@ def run_backtest_with_threshold(x_entry=DEFAULT_X_ENTRY, x_exit=DEFAULT_X_EXIT, 
     bh_std = float(bh_rets.std(ddof=1))
     bh_sharpe = _safe_float((float(bh_rets.mean()) / bh_std * np.sqrt(8760.0))) if bh_std > 1e-8 else 0.0
 
+    # Indicator Distribution Statistics (Extremes & Quantiles)
+    preds_vals = preds.values.flatten() if hasattr(preds, 'values') else np.array(preds).flatten()
+    stats = {
+        "min": _safe_float(float(np.min(preds_vals))),
+        "max": _safe_float(float(np.max(preds_vals))),
+        "q01": _safe_float(float(np.percentile(preds_vals, 1))),
+        "q05": _safe_float(float(np.percentile(preds_vals, 5))),
+        "q25": _safe_float(float(np.percentile(preds_vals, 25))),
+        "median": _safe_float(float(np.percentile(preds_vals, 50))),
+        "q75": _safe_float(float(np.percentile(preds_vals, 75))),
+        "q95": _safe_float(float(np.percentile(preds_vals, 95))),
+        "q99": _safe_float(float(np.percentile(preds_vals, 99))),
+        "mean": _safe_float(float(np.mean(preds_vals))),
+        "std": _safe_float(float(np.std(preds_vals))),
+    }
+
     return {
         "portfolio": pf,
         "combined_equity": combined_equity,
@@ -219,6 +235,7 @@ def run_backtest_with_threshold(x_entry=DEFAULT_X_ENTRY, x_exit=DEFAULT_X_EXIT, 
         "init_cash_each": init_cash_each,
         "price": price,
         "preds": preds,
+        "stats": stats,
         "test_indices": test_indices,
         "x_entry": x_entry,
         "x_exit": x_exit,
@@ -360,8 +377,17 @@ def plot_backtest_results(results, fig=None, ax1=None, ax2=None, ax3=None):
         ax2.axhline(buy_exit, color='#4ade80', linestyle=':', label=f'Buy Exit ({buy_exit:.4f})', alpha=0.9)
         ax2.axhline(1.0, color='#64748b', linestyle=':', label='Neutral (1.0)', alpha=0.6)
         ax2.axhline(sell_exit, color='#f87171', linestyle=':', label=f'Sell Exit ({sell_exit:.4f})', alpha=0.9)
-        ax2.axhline(sell_entry, color='#ef4444', linestyle='--', label=f'Sell Entry ({sell_entry:.4f})', alpha=0.9)
-        ax2.set_title(f'Oscillators with Hysteresis Bands (x_in={x_entry:.3f}, x_out={x_exit:.3f})', fontsize=11, color='#f1f5f9', fontweight='bold')
+        stats = results.get("stats", {})
+        if stats:
+            p_min = stats.get("min", 0.0)
+            p_max = stats.get("max", 0.0)
+            q05 = stats.get("q05", 0.0)
+            q50 = stats.get("median", 1.0)
+            q95 = stats.get("q95", 0.0)
+            stats_str = f" | P05={q05:.3f}, Med={q50:.3f}, P95={q95:.3f} [Extremes: {p_min:.3f} - {p_max:.3f}]"
+        else:
+            stats_str = ""
+        ax2.set_title(f'Oscillators with Hysteresis Bands (x_in={x_entry:.3f}, x_out={x_exit:.3f}){stats_str}', fontsize=10, color='#f1f5f9', fontweight='bold')
         ax2.set_ylabel('Output', fontsize=9, color='#94a3b8')
         ax2.legend(loc='upper left', fontsize=8, facecolor='#181b24', edgecolor='#262b3a', labelcolor='#e2e8f0')
         equity_ax = ax3

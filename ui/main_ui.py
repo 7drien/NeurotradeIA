@@ -48,10 +48,15 @@ def get_device_info():
         import tensorflow as tf
         gpus = tf.config.list_physical_devices('GPU')
         if gpus:
-            return "NVIDIA CUDA GPU Active", ACCENT_GREEN
+            try:
+                details = tf.config.experimental.get_device_details(gpus[0])
+                name = details.get('device_name', 'CUDA GPU')
+                return f"CUDA: {name}", ACCENT_GREEN
+            except Exception:
+                return "CUDA: GPU Active", ACCENT_GREEN
     except Exception:
         pass
-    return "CPU Fallback Mode", TEXT_MUTED
+    return "CPU Active", TEXT_MUTED
 
 class ModernEntry(tk.Entry):
     def __init__(self, master, textvariable=None, font_family="DejaVu Sans", **kwargs):
@@ -211,23 +216,33 @@ class App(tk.Tk):
         )
         self.recalc_button.pack(fill=tk.X, pady=(8, 0))
 
-        # --- Card 3: Hardware & Partition Status ---
+        # --- Card 3: Indicator Statistical Distribution & Quantiles ---
         c3 = self.create_card(left_panel)
         c3.pack(fill=tk.X)
 
-        device_str, device_color = get_device_info()
         c3_header = tk.Frame(c3, bg=BG_CARD)
-        c3_header.pack(fill=tk.X)
-        tk.Label(c3_header, text=f"● {device_str}", font=(self.font_family, 8, "bold"), fg=device_color, bg=BG_CARD).pack(side=tk.LEFT)
+        c3_header.pack(fill=tk.X, pady=(0, 2))
+        tk.Label(c3_header, text="DISTRIBUTION STATISTIQUE", font=(self.font_family, 9, "bold"), fg=ACCENT_CYAN, bg=BG_CARD).pack(side=tk.LEFT)
+        tk.Label(c3_header, text="● Quantiles", font=(self.font_family, 7, "bold"), fg=TEXT_SUB, bg=BG_CARD).pack(side=tk.RIGHT)
 
-        tk.Label(
-            c3, 
-            text="Data: 80% Train | 20% Out-of-sample Test",
-            font=(self.font_family, 7), 
-            fg=TEXT_SUB, 
-            bg=BG_CARD, 
-            justify=tk.LEFT
-        ).pack(anchor=tk.W, pady=(3, 0))
+        # Mini Matplotlib Distribution Plot (Histogram & Quantile Lines)
+        self.dist_fig, self.dist_ax = plt.subplots(figsize=(3.1, 0.95), dpi=90)
+        self.dist_fig.patch.set_facecolor(BG_CARD)
+        self.dist_fig.subplots_adjust(left=0.08, right=0.96, top=0.92, bottom=0.28)
+        self.format_dist_axis()
+        self.dist_canvas = FigureCanvasTkAgg(self.dist_fig, master=c3)
+        self.dist_canvas.get_tk_widget().pack(fill=tk.X, pady=(2, 4))
+
+        # Quantile & Extreme Value Badges Table
+        self.stat_labels = {}
+        stats_frame = tk.Frame(c3, bg=BG_CARD)
+        stats_frame.pack(fill=tk.X)
+
+        self.create_stat_row(stats_frame, "MIN", "min", ACCENT_ROSE, "MAX", "max", ACCENT_GREEN)
+        self.create_stat_row(stats_frame, "P01 (1%)", "q01", "#f87171", "P99 (99%)", "q99", "#4ade80")
+        self.create_stat_row(stats_frame, "P05 (5%)", "q05", "#fb923c", "P95 (95%)", "q95", "#38bdf8")
+        self.create_stat_row(stats_frame, "Q25 (Q1)", "q25", TEXT_MUTED, "Q75 (Q3)", "q75", TEXT_MUTED)
+        self.create_stat_row(stats_frame, "MÉDIANE", "median", ACCENT_CYAN, "STD (σ)", "std", ACCENT_PURPLE)
 
         # =========================================================================
         # RIGHT PANEL: Top Header, Modern KPI Badges & Matplotlib Charts
@@ -242,7 +257,11 @@ class App(tk.Tk):
         title_left = tk.Frame(header_frame, bg=BG_MAIN)
         title_left.pack(side=tk.LEFT)
         tk.Label(title_left, text="NEUROTRADE AI", font=(self.font_family, 13, "bold"), fg=TEXT_WHITE, bg=BG_MAIN).pack(side=tk.LEFT)
-        tk.Label(title_left, text=" | MLP Oscillator & Strategy Terminal", font=(self.font_family, 10), fg=TEXT_SUB, bg=BG_MAIN).pack(side=tk.LEFT, padx=6)
+
+        device_str, device_color = get_device_info()
+        device_badge = tk.Frame(title_left, bg=BG_CARD, highlightbackground=BORDER_CARD, highlightthickness=1, padx=8, pady=3)
+        device_badge.pack(side=tk.LEFT, padx=(12, 0))
+        tk.Label(device_badge, text=f"● {device_str}", font=(self.font_family, 8, "bold"), fg=device_color, bg=BG_CARD).pack()
 
         header_right = tk.Frame(header_frame, bg=BG_MAIN)
         header_right.pack(side=tk.RIGHT)
@@ -324,6 +343,34 @@ class App(tk.Tk):
         col2.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(3, 0))
         tk.Label(col2, text=label2, font=(self.font_family, 7, "bold"), fg=TEXT_MUTED, bg=BG_CARD).pack(anchor=tk.W)
         ModernEntry(col2, textvariable=var2, font_family=self.font_family).pack(fill=tk.X, pady=(2, 0))
+
+    def format_dist_axis(self):
+        self.dist_ax.set_facecolor(BG_CARD)
+        for spine in self.dist_ax.spines.values():
+            spine.set_color(BORDER_CARD)
+        self.dist_ax.spines['top'].set_visible(False)
+        self.dist_ax.spines['left'].set_visible(False)
+        self.dist_ax.spines['right'].set_visible(False)
+        self.dist_ax.tick_params(colors=TEXT_MUTED, labelsize=7, length=2, pad=1)
+        self.dist_ax.set_yticks([])
+
+    def create_stat_row(self, parent, label1, key1, color1, label2, key2, color2):
+        row = tk.Frame(parent, bg=BG_CARD)
+        row.pack(fill=tk.X, pady=1)
+
+        c1 = tk.Frame(row, bg=BG_INPUT, highlightbackground=BORDER_CARD, highlightthickness=1, padx=5, pady=2)
+        c1.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 2))
+        tk.Label(c1, text=label1, font=(self.font_family, 7), fg=TEXT_MUTED, bg=BG_INPUT).pack(side=tk.LEFT)
+        val1 = tk.Label(c1, text="-", font=(self.font_family, 8, "bold"), fg=color1, bg=BG_INPUT)
+        val1.pack(side=tk.RIGHT)
+        self.stat_labels[key1] = val1
+
+        c2 = tk.Frame(row, bg=BG_INPUT, highlightbackground=BORDER_CARD, highlightthickness=1, padx=5, pady=2)
+        c2.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(2, 0))
+        tk.Label(c2, text=label2, font=(self.font_family, 7), fg=TEXT_MUTED, bg=BG_INPUT).pack(side=tk.LEFT)
+        val2 = tk.Label(c2, text="-", font=(self.font_family, 8, "bold"), fg=color2, bg=BG_INPUT)
+        val2.pack(side=tk.RIGHT)
+        self.stat_labels[key2] = val2
 
     def create_single_input_row(self, parent, label_text, var):
         frame = tk.Frame(parent, bg=BG_CARD)
@@ -439,6 +486,7 @@ class App(tk.Tk):
 
         plot_backtest_results(results, self.fig, self.ax1, self.ax2, self.ax3)
         self.canvas.draw()
+        self.update_distribution_stats(results)
 
         pf = results['portfolio']
         returns = results.get('returns', 0.0)
@@ -475,6 +523,71 @@ class App(tk.Tk):
         )
         if 'epoch' in results:
             self.kpi_labels["EPOCH"].config(text=f"{results['epoch']}", fg=TEXT_WHITE)
+
+    def update_distribution_stats(self, results):
+        """Updates the mini distribution histogram and quantiles table in Card 3."""
+        if not results:
+            return
+        preds = results.get('preds', None)
+        if preds is None:
+            return
+
+        import numpy as np
+        preds_vals = preds.values.flatten() if hasattr(preds, 'values') else np.array(preds).flatten()
+        if len(preds_vals) == 0:
+            return
+
+        stats = results.get('stats', None)
+        if stats is None:
+            stats = {
+                "min": float(np.min(preds_vals)),
+                "max": float(np.max(preds_vals)),
+                "q01": float(np.percentile(preds_vals, 1)),
+                "q05": float(np.percentile(preds_vals, 5)),
+                "q25": float(np.percentile(preds_vals, 25)),
+                "median": float(np.percentile(preds_vals, 50)),
+                "q75": float(np.percentile(preds_vals, 75)),
+                "q95": float(np.percentile(preds_vals, 95)),
+                "q99": float(np.percentile(preds_vals, 99)),
+                "mean": float(np.mean(preds_vals)),
+                "std": float(np.std(preds_vals)),
+            }
+
+        # Update numerical labels
+        for k, lbl in self.stat_labels.items():
+            if k in stats:
+                lbl.config(text=f"{stats[k]:.4f}")
+
+        # Update mini distribution plot
+        self.dist_ax.clear()
+        self.format_dist_axis()
+
+        n_bins = min(35, max(15, len(preds_vals) // 40))
+        counts, bins, _ = self.dist_ax.hist(
+            preds_vals, bins=n_bins, density=True,
+            color='#0ea5e9', alpha=0.55,
+            edgecolor='#0284c7', linewidth=0.5
+        )
+
+        med = stats.get('median', 1.0)
+        self.dist_ax.axvline(med, color='#38bdf8', linestyle='-', linewidth=1.2, alpha=0.9)
+
+        q05 = stats.get('q05', 0.98)
+        q95 = stats.get('q95', 1.02)
+        self.dist_ax.axvline(q05, color='#94a3b8', linestyle=':', linewidth=0.9, alpha=0.8)
+        self.dist_ax.axvline(q95, color='#94a3b8', linestyle=':', linewidth=0.9, alpha=0.8)
+
+        x_entry = results.get('x_entry', None)
+        if x_entry is not None:
+            buy_e = 1.0 + x_entry
+            sell_e = 1.0 - x_entry
+            b_min, b_max = float(bins.min()), float(bins.max())
+            if b_min <= buy_e <= b_max:
+                self.dist_ax.axvline(buy_e, color='#22c55e', linestyle='--', linewidth=1.1, alpha=0.85)
+            if b_min <= sell_e <= b_max:
+                self.dist_ax.axvline(sell_e, color='#ef4444', linestyle='--', linewidth=1.1, alpha=0.85)
+
+        self.dist_canvas.draw()
 
     def initial_load_backtest(self):
         """Loads and displays existing cached backtest on startup if available."""
@@ -533,6 +646,10 @@ class App(tk.Tk):
                 self.after_cancel(self._initial_load_id)
             except Exception:
                 pass
+        try:
+            plt.close('all')
+        except Exception:
+            pass
         self.destroy()
         os._exit(0)
 
