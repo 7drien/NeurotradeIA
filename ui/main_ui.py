@@ -113,14 +113,14 @@ class App(ctk.CTk):
         self.k_steps_var = ctk.StringVar(value="32")
 
         self.create_two_inputs_row(c1, "Epochs:", self.epochs_var, "Batch Size:", self.batch_size_var)
-        self.create_two_inputs_row(c1, "Learning Rate:", self.lr_var, "Ensemble (n models):", self.n_models_var)
-        self.create_two_inputs_row(c1, "Sequence (256):", self.n_steps_var, "Horizon (32):", self.k_steps_var)
+        self.create_two_inputs_row(c1, "Learning Rate:", self.lr_var, "Ensemble (n):", self.n_models_var)
+        self.create_two_inputs_row(c1, "Sequence (n):", self.n_steps_var, "Horizon (k):", self.k_steps_var)
         self.create_single_input_row(c1, "Days to Load:", self.days_var)
 
         self.early_stopping_var = ctk.BooleanVar(value=True)
         self.es_check = ctk.CTkCheckBox(
             c1,
-            text="Enable Early Stopping (patience=15)",
+            text="Early Stopping (p=15)",
             variable=self.early_stopping_var,
             font=(self.font_family, 10),
             text_color=TEXT_WHITE,
@@ -153,45 +153,29 @@ class App(ctk.CTk):
         c2.pack(fill="x", pady=(0, 10))
 
         c2_header = ctk.CTkFrame(c2, fg_color="transparent")
-        c2_header.pack(fill="x", pady=(0, 2))
+        c2_header.pack(fill="x", pady=(0, 4))
         ctk.CTkLabel(
             c2_header,
             text="FAST OSCILLATOR STRATEGY",
             font=(self.font_family, 10, "bold"),
             text_color=ACCENT_PURPLE
         ).pack(side="left")
-        ctk.CTkLabel(
-            c2_header,
-            text="● VectorBT",
-            font=(self.font_family, 8, "bold"),
-            text_color=TEXT_SUB
-        ).pack(side="right")
-
-        rule_lbl = ctk.CTkLabel(
-            c2,
-            text="Long: Buy > 1+x_in  |  Exit < 1+x_out\nShort: Sell < 1-x_in  |  Exit > 1-x_out",
-            font=(self.font_family, 8),
-            text_color=TEXT_SUB,
-            justify="left",
-            anchor="w"
-        )
-        rule_lbl.pack(fill="x", pady=(0, 6))
 
         self.x_entry_var = ctk.StringVar(value="0.05")
         self.x_exit_var = ctk.StringVar(value="-0.02")
         self.fees_var = ctk.StringVar(value="0.1")
 
-        self.create_two_inputs_row(c2, "Entry x_in (e.g. 0.05):", self.x_entry_var, "Exit x_out (e.g. -0.02):", self.x_exit_var)
-        self.create_single_input_row(c2, "Fees per Trade (%):", self.fees_var)
+        self.create_two_inputs_row(c2, "Entry (x_in):", self.x_entry_var, "Exit (x_out):", self.x_exit_var)
+        self.create_single_input_row(c2, "Fees (%):", self.fees_var)
 
         # Quick Presets
         ctk.CTkLabel(
             c2,
-            text="Quick Presets (Entry / Exit):",
+            text="Quick Presets:",
             font=(self.font_family, 8, "bold"),
             text_color=TEXT_MUTED,
             anchor="w"
-        ).pack(fill="x", pady=(6, 2))
+        ).pack(fill="x", pady=(4, 2))
 
         p_row1 = ctk.CTkFrame(c2, fg_color="transparent")
         p_row1.pack(fill="x", pady=1)
@@ -225,16 +209,10 @@ class App(ctk.CTk):
         c3_header.pack(fill="x", pady=(0, 2))
         ctk.CTkLabel(
             c3_header,
-            text="STATISTICAL DISTRIBUTION",
+            text="DISTRIBUTION STATISTIQUE",
             font=(self.font_family, 10, "bold"),
             text_color=ACCENT_CYAN
         ).pack(side="left")
-        ctk.CTkLabel(
-            c3_header,
-            text="● Quantiles",
-            font=(self.font_family, 8, "bold"),
-            text_color=TEXT_SUB
-        ).pack(side="right")
 
         # Mini Matplotlib Distribution Plot (Histogram & Quantile Lines)
         self.dist_fig, self.dist_ax = plt.subplots(figsize=(3.1, 0.95), dpi=90)
@@ -250,27 +228,27 @@ class App(ctk.CTk):
         stats_frame.pack(fill="x")
 
         self.create_stat_row(stats_frame, "MIN", "min", ACCENT_ROSE, "MAX", "max", ACCENT_GREEN)
-        self.create_stat_row(stats_frame, "P01 (1%)", "q01", "#f87171", "P99 (99%)", "q99", "#4ade80")
-        self.create_stat_row(stats_frame, "P05 (5%)", "q05", "#fb923c", "P95 (95%)", "q95", "#38bdf8")
-        self.create_stat_row(stats_frame, "Q25 (Q1)", "q25", TEXT_MUTED, "Q75 (Q3)", "q75", TEXT_MUTED)
-        self.create_stat_row(stats_frame, "MEDIAN", "median", ACCENT_CYAN, "STD (σ)", "std", ACCENT_PURPLE)
+        self.create_stat_row(stats_frame, "P01", "q01", "#f87171", "P99", "q99", "#4ade80")
+        self.create_stat_row(stats_frame, "P05", "q05", "#fb923c", "P95", "q95", "#38bdf8")
+        self.create_stat_row(stats_frame, "Q25", "q25", TEXT_MUTED, "Q75", "q75", TEXT_MUTED)
+        self.create_stat_row(stats_frame, "MEDIAN", "median", ACCENT_CYAN, "STD", "std", ACCENT_PURPLE)
 
         # =========================================================================
-        # RIGHT PANEL: Top Header, Modern KPI Badges & Matplotlib Charts
+        # RIGHT PANEL: Compact Header with Inline KPIs & Full-Height Charts
         # =========================================================================
         right_panel = ctk.CTkFrame(main_frame, fg_color=BG_MAIN, corner_radius=0)
         right_panel.pack(side="right", fill="both", expand=True)
 
-        # Header Title Bar
-        header_frame = ctk.CTkFrame(right_panel, fg_color=BG_MAIN, corner_radius=0)
-        header_frame.pack(fill="x", pady=(0, 6))
+        # Single Compact Header Bar
+        header_frame = ctk.CTkFrame(right_panel, fg_color=BG_MAIN, corner_radius=0, height=34)
+        header_frame.pack(fill="x", pady=(0, 2))
 
         title_left = ctk.CTkFrame(header_frame, fg_color=BG_MAIN, corner_radius=0)
         title_left.pack(side="left")
         ctk.CTkLabel(
             title_left,
             text="NEUROTRADE AI",
-            font=(self.font_family, 15, "bold"),
+            font=(self.font_family, 13, "bold"),
             text_color=TEXT_WHITE
         ).pack(side="left")
 
@@ -282,76 +260,78 @@ class App(ctk.CTk):
             border_width=1,
             corner_radius=6
         )
-        device_badge.pack(side="left", padx=(12, 0))
+        device_badge.pack(side="left", padx=(10, 10))
         ctk.CTkLabel(
             device_badge,
             text=f"● {device_str}",
-            font=(self.font_family, 9, "bold"),
+            font=(self.font_family, 8, "bold"),
             text_color=device_color
-        ).pack(padx=8, pady=3)
+        ).pack(padx=6, pady=2)
 
-        header_right = ctk.CTkFrame(header_frame, fg_color=BG_MAIN, corner_radius=0)
-        header_right.pack(side="right")
+        # Progress bar (direct child of header_frame, only packed when training)
         self.progress = ctk.CTkProgressBar(
-            header_right,
+            header_frame,
             mode="indeterminate",
-            width=140,
+            width=100,
+            height=10,
             progress_color=ACCENT_BLUE,
             fg_color=BG_CARD
         )
 
-        # KPI Metric Cards Bar (7 Cards)
-        metrics_bar = ctk.CTkFrame(right_panel, fg_color=BG_MAIN, corner_radius=0)
-        metrics_bar.pack(fill="x", pady=(0, 8))
+        # Inline KPI Pills
+        kpis_frame = ctk.CTkFrame(header_frame, fg_color=BG_MAIN, corner_radius=0)
+        kpis_frame.pack(side="left", fill="x", expand=True)
 
         kpis = [
-            ("EPOCH", "N/A", TEXT_MUTED),
-            ("STRATEGY RETURN", "+0.00%", ACCENT_GREEN),
-            ("BUY & HOLD BTC", "+0.00%", ACCENT_AMBER),
-            ("SHARPE RATIO", "0.00", ACCENT_PURPLE),
+            ("STRATEGY", "+0.00%", ACCENT_GREEN),
+            ("BUY & HOLD", "+0.00%", ACCENT_AMBER),
+            ("SHARPE", "0.00", ACCENT_PURPLE),
             ("WIN RATE", "0.0%", ACCENT_CYAN),
-            ("TOTAL TRADES", "0", BORDER_FOCUS),
-            ("MAX DRAWDOWN", "0.00%", ACCENT_ROSE),
+            ("TRADES", "0", BORDER_FOCUS),
+            ("MAX DD", "0.00%", ACCENT_ROSE),
+            ("EPOCH", "-", TEXT_MUTED),
         ]
 
         self.kpi_labels = {}
         for key, default_val, default_color in kpis:
-            card = ctk.CTkFrame(
-                metrics_bar,
+            pill = ctk.CTkFrame(
+                kpis_frame,
                 fg_color=BG_CARD,
                 border_color=BORDER_CARD,
                 border_width=1,
-                corner_radius=8
+                corner_radius=6
             )
-            card.pack(side="left", fill="both", expand=True, padx=2)
+            pill.pack(side="left", padx=2, pady=1)
 
-            lbl_title = ctk.CTkLabel(
-                card,
+            ctk.CTkLabel(
+                pill,
                 text=key,
-                font=(self.font_family, 8, "bold"),
-                text_color=TEXT_SUB,
-                anchor="w"
-            )
-            lbl_title.pack(anchor="w", padx=8, pady=(4, 0))
+                font=(self.font_family, 7, "bold"),
+                text_color=TEXT_SUB
+            ).pack(side="left", padx=(5, 3), pady=2)
 
             lbl_val = ctk.CTkLabel(
-                card,
+                pill,
                 text=default_val,
-                font=(self.font_family, 13, "bold"),
-                text_color=default_color,
-                anchor="w"
+                font=(self.font_family, 9, "bold"),
+                text_color=default_color
             )
-            lbl_val.pack(anchor="w", padx=8, pady=(0, 4))
+            lbl_val.pack(side="left", padx=(0, 5), pady=2)
             self.kpi_labels[key] = lbl_val
 
-        # Aliases for backward compatibility
+        # Backward compatibility aliases
+        self.kpi_labels["STRATEGY RETURN"] = self.kpi_labels["STRATEGY"]
+        self.kpi_labels["BUY & HOLD BTC"] = self.kpi_labels["BUY & HOLD"]
+        self.kpi_labels["SHARPE RATIO"] = self.kpi_labels["SHARPE"]
+        self.kpi_labels["TOTAL TRADES"] = self.kpi_labels["TRADES"]
+        self.kpi_labels["MAX DRAWDOWN"] = self.kpi_labels["MAX DD"]
         self.epoch_label = self.kpi_labels["EPOCH"]
-        self.return_label = self.kpi_labels["STRATEGY RETURN"]
-        self.bh_label = self.kpi_labels["BUY & HOLD BTC"]
-        self.sharpe_label = self.kpi_labels["SHARPE RATIO"]
+        self.return_label = self.kpi_labels["STRATEGY"]
+        self.bh_label = self.kpi_labels["BUY & HOLD"]
+        self.sharpe_label = self.kpi_labels["SHARPE"]
         self.winrate_label = self.kpi_labels["WIN RATE"]
-        self.trades_label = self.kpi_labels["TOTAL TRADES"]
-        self.max_dd_label = self.kpi_labels["MAX DRAWDOWN"]
+        self.trades_label = self.kpi_labels["TRADES"]
+        self.max_dd_label = self.kpi_labels["MAX DD"]
 
         # Matplotlib Plot Canvas
         plot_frame = ctk.CTkFrame(right_panel, fg_color=BG_MAIN, corner_radius=0)
@@ -364,6 +344,7 @@ class App(ctk.CTk):
             sharex=True
         )
         self.fig.patch.set_facecolor(BG_MAIN)
+        self.fig.subplots_adjust(top=0.96, bottom=0.04, left=0.05, right=0.98, hspace=0.18)
         for ax in [self.ax1, self.ax2, self.ax3]:
             ax.set_facecolor(BG_CARD)
             ax.grid(color=BORDER_CARD, alpha=0.6, linestyle='--')
@@ -372,7 +353,7 @@ class App(ctk.CTk):
             ax.tick_params(colors=TEXT_MUTED, labelsize=8)
 
         self.canvas = FigureCanvasTkAgg(self.fig, master=plot_frame)
-        self.canvas.get_tk_widget().pack(side="top", fill="both", expand=True)
+        self.canvas.get_tk_widget().pack(fill="both", expand=True)
 
         # Queue checking and initial cached backtest load
         self._check_queue_id = self.after(100, self.check_queue)

@@ -328,11 +328,12 @@ def plot_backtest_results(results, fig=None, ax1=None, ax2=None, ax3=None):
     n_models = results.get("n_models", preds_series.shape[1] if is_multi_model else 1)
     test_indices = pf.close.index
     actual_prices = pf.close.values
+    single_price = actual_prices[:, 0] if actual_prices.ndim > 1 else actual_prices
     portfolio_value = results.get("combined_equity", pf.value().sum(axis=1) if is_multi_model else pf.value()).values
     total_trades = results.get("total_trades", int(pf.trades.count().sum()) if hasattr(pf.trades.count(), 'sum') else int(pf.trades.count()))
     
     # --- 1. Price and Trade Signals ---
-    ax1.plot(test_indices, actual_prices, label='Price (USD)', color='#38bdf8', linewidth=1.2, zorder=1)
+    ax1.plot(test_indices, single_price, label='Price', color='#38bdf8', linewidth=1.2, zorder=1)
     
     trades = pf.trades
     if total_trades > 0:
@@ -347,17 +348,17 @@ def plot_backtest_results(results, fig=None, ax1=None, ax2=None, ax3=None):
         short_mask = direction == 'Short'
         
         if long_mask.any():
-            ax1.scatter(entries_idx[long_mask], entry_prices[long_mask], label=f'Buy Long (> {buy_entry:.3f})', marker='^', color='#22c55e', s=85, zorder=5)
-            ax1.scatter(exit_idx[long_mask], exit_prices[long_mask], label=f'Exit Long (< {buy_exit:.3f})', marker='x', color='#4ade80', s=65, zorder=5)
+            ax1.scatter(entries_idx[long_mask], entry_prices[long_mask], label='Buy Long', marker='^', color='#22c55e', s=85, zorder=5)
+            ax1.scatter(exit_idx[long_mask], exit_prices[long_mask], label='Exit Long', marker='x', color='#4ade80', s=65, zorder=5)
             
         if short_mask.any():
-            ax1.scatter(entries_idx[short_mask], entry_prices[short_mask], label=f'Sell Short (< {sell_entry:.3f})', marker='v', color='#ef4444', s=85, zorder=5)
-            ax1.scatter(exit_idx[short_mask], exit_prices[short_mask], label=f'Exit Short (> {sell_exit:.3f})', marker='x', color='#f87171', s=65, zorder=5)
+            ax1.scatter(entries_idx[short_mask], entry_prices[short_mask], label='Sell Short', marker='v', color='#ef4444', s=85, zorder=5)
+            ax1.scatter(exit_idx[short_mask], exit_prices[short_mask], label='Exit Short', marker='x', color='#f87171', s=65, zorder=5)
             
     fees_pct = results.get("fees_pct", results.get("fees", TRANSACTION_COST) * 100.0)
-    model_info_str = f"Ensemble ({n_models} models)" if is_multi_model else "Single Model"
-    ax1.set_title(f'Market Price & Executions [{model_info_str}] (x_in={x_entry:.3f}, x_out={x_exit:.3f}, Fee={fees_pct:.2f}% | Trades: {total_trades})', fontsize=11, color='#f1f5f9', fontweight='bold')
-    ax1.set_ylabel('Price (USD)', fontsize=9, color='#94a3b8')
+    model_info_str = f"Ensemble ({n_models})" if is_multi_model else "Single"
+    ax1.set_title('Price & Signals', fontsize=11, color='#f1f5f9', fontweight='bold')
+    ax1.set_ylabel('Price ($)', fontsize=9, color='#94a3b8')
     ax1.legend(loc='upper left', fontsize=8, facecolor='#181b24', edgecolor='#262b3a', labelcolor='#e2e8f0')
     
     # --- 2. Model Oscillator with 1±x_entry and 1±x_exit Thresholds ---
@@ -371,34 +372,24 @@ def plot_backtest_results(results, fig=None, ax1=None, ax2=None, ax3=None):
             ax2.plot(test_indices, mean_preds.values, label='Ensemble Mean', color='#06b6d4', linewidth=1.5)
         else:
             p_vals = preds_series.values if hasattr(preds_series, 'values') else preds_series
-            ax2.plot(test_indices, p_vals, label='Model Oscillator', color='#06b6d4', linewidth=1.0)
+            ax2.plot(test_indices, p_vals, label='Oscillator', color='#06b6d4', linewidth=1.0)
 
-        ax2.axhline(buy_entry, color='#22c55e', linestyle='--', label=f'Buy Entry ({buy_entry:.4f})', alpha=0.9)
-        ax2.axhline(buy_exit, color='#4ade80', linestyle=':', label=f'Buy Exit ({buy_exit:.4f})', alpha=0.9)
-        ax2.axhline(1.0, color='#64748b', linestyle=':', label='Neutral (1.0)', alpha=0.6)
-        ax2.axhline(sell_exit, color='#f87171', linestyle=':', label=f'Sell Exit ({sell_exit:.4f})', alpha=0.9)
-        stats = results.get("stats", {})
-        if stats:
-            p_min = stats.get("min", 0.0)
-            p_max = stats.get("max", 0.0)
-            q05 = stats.get("q05", 0.0)
-            q50 = stats.get("median", 1.0)
-            q95 = stats.get("q95", 0.0)
-            stats_str = f" | P05={q05:.3f}, Med={q50:.3f}, P95={q95:.3f} [Extremes: {p_min:.3f} - {p_max:.3f}]"
-        else:
-            stats_str = ""
-        ax2.set_title(f'Oscillators with Hysteresis Bands (x_in={x_entry:.3f}, x_out={x_exit:.3f}){stats_str}', fontsize=10, color='#f1f5f9', fontweight='bold')
-        ax2.set_ylabel('Output', fontsize=9, color='#94a3b8')
+        ax2.axhline(buy_entry, color='#22c55e', linestyle='--', alpha=0.8)
+        ax2.axhline(buy_exit, color='#4ade80', linestyle=':', alpha=0.8)
+        ax2.axhline(1.0, color='#64748b', linestyle=':', alpha=0.5)
+        ax2.axhline(sell_exit, color='#f87171', linestyle=':', alpha=0.8)
+        ax2.axhline(sell_entry, color='#ef4444', linestyle='--', alpha=0.8)
+        ax2.set_title('Model Oscillators', fontsize=11, color='#f1f5f9', fontweight='bold')
         ax2.legend(loc='upper left', fontsize=8, facecolor='#181b24', edgecolor='#262b3a', labelcolor='#e2e8f0')
         equity_ax = ax3
     else:
         equity_ax = ax2
 
     # --- 3. Portfolio Equity vs Buy & Hold Curve ---
-    bh_equity = (actual_prices / (actual_prices[0] + 1e-8)) * initial_capital
+    single_bh = (single_price / (single_price[0] + 1e-8)) * initial_capital
 
     if is_multi_model:
-        equity_ax.plot(test_indices, portfolio_value, label=f'Ensemble Equity ({ret:+.2f}%)', color='#a855f7', linewidth=1.8, zorder=4)
+        equity_ax.plot(test_indices, portfolio_value, label=f'Ensemble ({ret:+.1f}%)', color='#a855f7', linewidth=1.8, zorder=4)
         sub_palette = ['#38bdf8', '#c084fc', '#f59e0b', '#34d399', '#f43f5e', '#a78bfa']
         init_each = results.get("init_cash_each", initial_capital / n_models)
         for i, col in enumerate(pf.value().columns):
@@ -408,18 +399,16 @@ def plot_backtest_results(results, fig=None, ax1=None, ax2=None, ax3=None):
             sc = sub_palette[i % len(sub_palette)]
             equity_ax.plot(test_indices, sub_norm.values, label=f'{col} ({sub_ret:+.1f}%)', color=sc, linestyle=':', linewidth=0.9, alpha=0.7, zorder=2)
     else:
-        equity_ax.plot(test_indices, portfolio_value, label=f'Strategy Equity ({ret:+.2f}%)', color='#a855f7', linewidth=1.5, zorder=3)
+        equity_ax.plot(test_indices, portfolio_value, label=f'Strategy ({ret:+.1f}%)', color='#a855f7', linewidth=1.5, zorder=3)
 
-    equity_ax.plot(test_indices, bh_equity, label=f'Buy & Hold BTC ({bh_ret:+.2f}%)', color='#f59e0b', linestyle='--', linewidth=1.2, alpha=0.85, zorder=2)
-    equity_ax.axhline(initial_capital, color='#64748b', linestyle=':', label='Initial Capital', alpha=0.5, zorder=1)
+    equity_ax.plot(test_indices, single_bh, label=f'Buy & Hold ({bh_ret:+.1f}%)', color='#f59e0b', linestyle='--', linewidth=1.2, alpha=0.85, zorder=2)
+    equity_ax.axhline(initial_capital, color='#64748b', linestyle=':', alpha=0.4, zorder=1)
     
-    title_prefix = f"Ensemble Equity ({n_models} models)" if is_multi_model else "Portfolio Equity"
-    equity_ax.set_title(f'{title_prefix} vs Buy & Hold (Sharpe: {sharpe:.2f} vs BTC: {bh_sharpe:.2f} | Max DD: {max_dd:.2f}%)', fontsize=11, color='#f1f5f9', fontweight='bold')
-    equity_ax.set_ylabel('Equity (USD)', fontsize=9, color='#94a3b8')
-    equity_ax.set_xlabel('Date', fontsize=9, color='#94a3b8')
+    equity_ax.set_title('Portfolio Equity vs Buy & Hold BTC', fontsize=11, color='#f1f5f9', fontweight='bold')
+    equity_ax.set_ylabel('Equity ($)', fontsize=9, color='#94a3b8')
     equity_ax.legend(loc='upper left', fontsize=8, facecolor='#181b24', edgecolor='#262b3a', labelcolor='#e2e8f0')
     
-    fig.tight_layout()
+    fig.subplots_adjust(top=0.96, bottom=0.04, left=0.05, right=0.98, hspace=0.18)
     if new_figure:
         plt.show()
     
