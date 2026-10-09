@@ -1,9 +1,9 @@
 import os
-import tkinter as tk
-from tkinter import ttk
+import sys
 import threading
 from queue import Queue, Empty
 
+import customtkinter as ctk
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
@@ -13,11 +13,11 @@ from src.backtesting import plot_backtest_results, run_backtest_with_threshold
 ui_queue = Queue()
 
 # Color Palette - Obsidian Quant Terminal
-BG_MAIN = "#0c0e14"
-BG_CARD = "#141721"
-BORDER_CARD = "#232738"
-BG_INPUT = "#1b1f2d"
-BORDER_INPUT = "#2d3448"
+BG_MAIN = "#0b0e14"
+BG_CARD = "#141722"
+BORDER_CARD = "#232838"
+BG_INPUT = "#1a1e2c"
+BORDER_INPUT = "#2c3346"
 BORDER_FOCUS = "#38bdf8"
 TEXT_WHITE = "#f8fafc"
 TEXT_MUTED = "#94a3b8"
@@ -34,8 +34,8 @@ ACCENT_ROSE = "#f43f5e"
 
 def get_font_family():
     try:
-        from tkinter import font
-        families = font.families()
+        import tkinter.font as tkfont
+        families = tkfont.families()
         for f in ["Segoe UI", "Ubuntu", "DejaVu Sans", "Helvetica", "Arial"]:
             if f in families:
                 return f
@@ -58,172 +58,183 @@ def get_device_info():
         pass
     return "CPU Active", TEXT_MUTED
 
-class ModernEntry(tk.Entry):
-    def __init__(self, master, textvariable=None, font_family="DejaVu Sans", **kwargs):
-        super().__init__(
-            master,
-            textvariable=textvariable,
-            bg=BG_INPUT,
-            fg=TEXT_WHITE,
-            insertbackground="#ffffff",
-            relief="flat",
-            highlightbackground=BORDER_INPUT,
-            highlightcolor=BORDER_FOCUS,
-            highlightthickness=1,
-            font=(font_family, 9),
-            **kwargs
-        )
-
-class App(tk.Tk):
+class App(ctk.CTk):
     def __init__(self):
         super().__init__()
+        
+        # Configure CustomTkinter theme and appearance
+        ctk.set_appearance_mode("dark")
+        ctk.set_default_color_theme("blue")
+        
         self.title("NeurotradeAI - Quantitative Dashboard")
         self.geometry("1450x950")
-        self.configure(bg=BG_MAIN)
+        self.minsize(1200, 800)
+        self.configure(fg_color=BG_MAIN)
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
 
         self.font_family = get_font_family()
 
-        # Modern TTK style configuration
-        style = ttk.Style(self)
-        if 'clam' in style.theme_names():
-            style.theme_use('clam')
-        style.configure(
-            "Horizontal.TProgressbar", 
-            troughcolor=BG_CARD, 
-            background=ACCENT_BLUE, 
-            bordercolor=BORDER_CARD, 
-            lightcolor=ACCENT_BLUE, 
-            darkcolor=ACCENT_BLUE
+        # Main horizontal container
+        main_frame = ctk.CTkFrame(self, fg_color=BG_MAIN, corner_radius=0)
+        main_frame.pack(fill="both", expand=True, padx=12, pady=10)
+
+        # =========================================================================
+        # LEFT PANEL: Parameters & Controls (Card-Based Layout, Scrollable)
+        # =========================================================================
+        left_panel = ctk.CTkScrollableFrame(
+            main_frame,
+            width=335,
+            fg_color=BG_MAIN,
+            corner_radius=0,
+            scrollbar_button_color=BORDER_CARD,
+            scrollbar_button_hover_color=BORDER_INPUT
         )
-
-        # Main horizontal container (zero scrollbars needed)
-        main_frame = tk.Frame(self, bg=BG_MAIN, padx=12, pady=10)
-        main_frame.pack(fill=tk.BOTH, expand=True)
-
-        # =========================================================================
-        # LEFT PANEL: Parameters & Controls (Card-Based Layout, No Scrollbar)
-        # =========================================================================
-        left_panel = tk.Frame(main_frame, bg=BG_MAIN, width=335)
-        left_panel.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 12))
-        left_panel.pack_propagate(False)
+        left_panel.pack(side="left", fill="y", padx=(0, 12))
 
         # --- Card 1: Model & Training Configuration ---
         c1 = self.create_card(left_panel)
-        c1.pack(fill=tk.X, pady=(0, 10))
+        c1.pack(fill="x", pady=(0, 10))
 
-        c1_header = tk.Frame(c1, bg=BG_CARD)
-        c1_header.pack(fill=tk.X, pady=(0, 8))
-        tk.Label(c1_header, text="MODEL CONFIGURATION", font=(self.font_family, 9, "bold"), fg=BORDER_FOCUS, bg=BG_CARD).pack(side=tk.LEFT)
+        c1_header = ctk.CTkFrame(c1, fg_color="transparent")
+        c1_header.pack(fill="x", pady=(0, 8))
+        ctk.CTkLabel(
+            c1_header,
+            text="MODEL CONFIGURATION",
+            font=(self.font_family, 10, "bold"),
+            text_color=BORDER_FOCUS
+        ).pack(side="left")
 
-        self.epochs_var = tk.StringVar(value="200")
-        self.batch_size_var = tk.StringVar(value="128")
-        self.lr_var = tk.StringVar(value="0.0003")
-        self.n_models_var = tk.StringVar(value="3")
-        self.days_var = tk.StringVar(value="All")
-        self.n_steps_var = tk.StringVar(value="256")
-        self.k_steps_var = tk.StringVar(value="32")
+        self.epochs_var = ctk.StringVar(value="200")
+        self.batch_size_var = ctk.StringVar(value="128")
+        self.lr_var = ctk.StringVar(value="0.0003")
+        self.n_models_var = ctk.StringVar(value="3")
+        self.days_var = ctk.StringVar(value="All")
+        self.n_steps_var = ctk.StringVar(value="256")
+        self.k_steps_var = ctk.StringVar(value="32")
 
         self.create_two_inputs_row(c1, "Epochs:", self.epochs_var, "Batch Size:", self.batch_size_var)
         self.create_two_inputs_row(c1, "Learning Rate:", self.lr_var, "Ensemble (n models):", self.n_models_var)
         self.create_two_inputs_row(c1, "Sequence (256):", self.n_steps_var, "Horizon (32):", self.k_steps_var)
         self.create_single_input_row(c1, "Days to Load:", self.days_var)
 
-        self.early_stopping_var = tk.BooleanVar(value=True)
-        self.es_check = tk.Checkbutton(
-            c1, 
-            text="Enable Early Stopping (patience=15)", 
+        self.early_stopping_var = ctk.BooleanVar(value=True)
+        self.es_check = ctk.CTkCheckBox(
+            c1,
+            text="Enable Early Stopping (patience=15)",
             variable=self.early_stopping_var,
-            bg=BG_CARD,
-            fg=TEXT_WHITE,
-            selectcolor=BG_INPUT,
-            activebackground=BG_CARD,
-            activeforeground=TEXT_WHITE,
-            relief="flat",
-            highlightthickness=0,
-            font=(self.font_family, 8)
+            font=(self.font_family, 10),
+            text_color=TEXT_WHITE,
+            fg_color=ACCENT_BLUE,
+            hover_color=ACCENT_BLUE_HOVER,
+            border_color=BORDER_INPUT,
+            border_width=1,
+            corner_radius=4,
+            checkbox_width=18,
+            checkbox_height=18
         )
-        self.es_check.pack(anchor=tk.W, pady=(4, 8))
+        self.es_check.pack(anchor="w", pady=(6, 10))
 
-        self.train_button = tk.Button(
+        self.train_button = ctk.CTkButton(
             c1,
             text="▶  START TRAINING",
-            font=(self.font_family, 9, "bold"),
-            bg=ACCENT_BLUE,
-            fg="#ffffff",
-            activebackground=ACCENT_BLUE_HOVER,
-            activeforeground="#ffffff",
-            relief="flat",
-            bd=0,
+            font=(self.font_family, 11, "bold"),
+            fg_color=ACCENT_BLUE,
+            hover_color=ACCENT_BLUE_HOVER,
+            text_color="#ffffff",
+            corner_radius=6,
+            height=34,
             cursor="hand2",
-            pady=7,
             command=self.run_training
         )
-        self.train_button.pack(fill=tk.X)
+        self.train_button.pack(fill="x")
 
         # --- Card 2: Fast Oscillator Strategy (VectorBT) ---
         c2 = self.create_card(left_panel)
-        c2.pack(fill=tk.X, pady=(0, 10))
+        c2.pack(fill="x", pady=(0, 10))
 
-        c2_header = tk.Frame(c2, bg=BG_CARD)
-        c2_header.pack(fill=tk.X, pady=(0, 2))
-        tk.Label(c2_header, text="FAST OSCILLATOR STRATEGY", font=(self.font_family, 9, "bold"), fg=ACCENT_PURPLE, bg=BG_CARD).pack(side=tk.LEFT)
-        tk.Label(c2_header, text="● VectorBT", font=(self.font_family, 7, "bold"), fg=TEXT_SUB, bg=BG_CARD).pack(side=tk.RIGHT)
+        c2_header = ctk.CTkFrame(c2, fg_color="transparent")
+        c2_header.pack(fill="x", pady=(0, 2))
+        ctk.CTkLabel(
+            c2_header,
+            text="FAST OSCILLATOR STRATEGY",
+            font=(self.font_family, 10, "bold"),
+            text_color=ACCENT_PURPLE
+        ).pack(side="left")
+        ctk.CTkLabel(
+            c2_header,
+            text="● VectorBT",
+            font=(self.font_family, 8, "bold"),
+            text_color=TEXT_SUB
+        ).pack(side="right")
 
-        rule_lbl = tk.Label(
-            c2, 
-            text="Long: Buy > 1+x_in  |  Exit < 1+x_out\nShort: Sell < 1-x_in  |  Exit > 1-x_out", 
-            font=(self.font_family, 7), 
-            fg=TEXT_SUB, 
-            bg=BG_CARD, 
-            justify=tk.LEFT
+        rule_lbl = ctk.CTkLabel(
+            c2,
+            text="Long: Buy > 1+x_in  |  Exit < 1+x_out\nShort: Sell < 1-x_in  |  Exit > 1-x_out",
+            font=(self.font_family, 8),
+            text_color=TEXT_SUB,
+            justify="left",
+            anchor="w"
         )
-        rule_lbl.pack(anchor=tk.W, pady=(0, 6))
+        rule_lbl.pack(fill="x", pady=(0, 6))
 
-        self.x_entry_var = tk.StringVar(value="0.05")
-        self.x_exit_var = tk.StringVar(value="-0.02")
-        self.fees_var = tk.StringVar(value="0.1")
+        self.x_entry_var = ctk.StringVar(value="0.05")
+        self.x_exit_var = ctk.StringVar(value="-0.02")
+        self.fees_var = ctk.StringVar(value="0.1")
 
         self.create_two_inputs_row(c2, "Entry x_in (e.g. 0.05):", self.x_entry_var, "Exit x_out (e.g. -0.02):", self.x_exit_var)
         self.create_single_input_row(c2, "Fees per Trade (%):", self.fees_var)
 
         # Quick Presets
-        tk.Label(c2, text="Quick Presets (Entry / Exit):", font=(self.font_family, 7, "bold"), fg=TEXT_MUTED, bg=BG_CARD).pack(anchor=tk.W, pady=(6, 2))
-        
-        p_row1 = tk.Frame(c2, bg=BG_CARD)
-        p_row1.pack(fill=tk.X, pady=1)
-        self.create_preset_btn(p_row1, "0.01 / 0.005", "0.01", "0.005").pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 2))
-        self.create_preset_btn(p_row1, "0.008 / 0.003", "0.008", "0.003").pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(2, 0))
+        ctk.CTkLabel(
+            c2,
+            text="Quick Presets (Entry / Exit):",
+            font=(self.font_family, 8, "bold"),
+            text_color=TEXT_MUTED,
+            anchor="w"
+        ).pack(fill="x", pady=(6, 2))
 
-        p_row2 = tk.Frame(c2, bg=BG_CARD)
-        p_row2.pack(fill=tk.X, pady=1)
-        self.create_preset_btn(p_row2, "0.015 / 0.008", "0.015", "0.008").pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 2))
-        self.create_preset_btn(p_row2, "0.02 / 0.01", "0.02", "0.01").pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(2, 0))
+        p_row1 = ctk.CTkFrame(c2, fg_color="transparent")
+        p_row1.pack(fill="x", pady=1)
+        self.create_preset_btn(p_row1, "0.01 / 0.005", "0.01", "0.005").pack(side="left", fill="x", expand=True, padx=(0, 2))
+        self.create_preset_btn(p_row1, "0.008 / 0.003", "0.008", "0.003").pack(side="left", fill="x", expand=True, padx=(2, 0))
 
-        self.recalc_button = tk.Button(
+        p_row2 = ctk.CTkFrame(c2, fg_color="transparent")
+        p_row2.pack(fill="x", pady=1)
+        self.create_preset_btn(p_row2, "0.015 / 0.008", "0.015", "0.008").pack(side="left", fill="x", expand=True, padx=(0, 2))
+        self.create_preset_btn(p_row2, "0.02 / 0.01", "0.02", "0.01").pack(side="left", fill="x", expand=True, padx=(2, 0))
+
+        self.recalc_button = ctk.CTkButton(
             c2,
             text="⚡  RECALCULATE BACKTEST",
-            font=(self.font_family, 9, "bold"),
-            bg=ACCENT_PURPLE,
-            fg="#ffffff",
-            activebackground=ACCENT_PURPLE_HOVER,
-            activeforeground="#ffffff",
-            relief="flat",
-            bd=0,
+            font=(self.font_family, 11, "bold"),
+            fg_color=ACCENT_PURPLE,
+            hover_color=ACCENT_PURPLE_HOVER,
+            text_color="#ffffff",
+            corner_radius=6,
+            height=34,
             cursor="hand2",
-            pady=7,
             command=self.run_recalculate_backtest
         )
-        self.recalc_button.pack(fill=tk.X, pady=(8, 0))
+        self.recalc_button.pack(fill="x", pady=(8, 0))
 
         # --- Card 3: Indicator Statistical Distribution & Quantiles ---
         c3 = self.create_card(left_panel)
-        c3.pack(fill=tk.X)
+        c3.pack(fill="x")
 
-        c3_header = tk.Frame(c3, bg=BG_CARD)
-        c3_header.pack(fill=tk.X, pady=(0, 2))
-        tk.Label(c3_header, text="DISTRIBUTION STATISTIQUE", font=(self.font_family, 9, "bold"), fg=ACCENT_CYAN, bg=BG_CARD).pack(side=tk.LEFT)
-        tk.Label(c3_header, text="● Quantiles", font=(self.font_family, 7, "bold"), fg=TEXT_SUB, bg=BG_CARD).pack(side=tk.RIGHT)
+        c3_header = ctk.CTkFrame(c3, fg_color="transparent")
+        c3_header.pack(fill="x", pady=(0, 2))
+        ctk.CTkLabel(
+            c3_header,
+            text="STATISTICAL DISTRIBUTION",
+            font=(self.font_family, 10, "bold"),
+            text_color=ACCENT_CYAN
+        ).pack(side="left")
+        ctk.CTkLabel(
+            c3_header,
+            text="● Quantiles",
+            font=(self.font_family, 8, "bold"),
+            text_color=TEXT_SUB
+        ).pack(side="right")
 
         # Mini Matplotlib Distribution Plot (Histogram & Quantile Lines)
         self.dist_fig, self.dist_ax = plt.subplots(figsize=(3.1, 0.95), dpi=90)
@@ -231,45 +242,67 @@ class App(tk.Tk):
         self.dist_fig.subplots_adjust(left=0.08, right=0.96, top=0.92, bottom=0.28)
         self.format_dist_axis()
         self.dist_canvas = FigureCanvasTkAgg(self.dist_fig, master=c3)
-        self.dist_canvas.get_tk_widget().pack(fill=tk.X, pady=(2, 4))
+        self.dist_canvas.get_tk_widget().pack(fill="x", pady=(2, 4))
 
         # Quantile & Extreme Value Badges Table
         self.stat_labels = {}
-        stats_frame = tk.Frame(c3, bg=BG_CARD)
-        stats_frame.pack(fill=tk.X)
+        stats_frame = ctk.CTkFrame(c3, fg_color="transparent")
+        stats_frame.pack(fill="x")
 
         self.create_stat_row(stats_frame, "MIN", "min", ACCENT_ROSE, "MAX", "max", ACCENT_GREEN)
         self.create_stat_row(stats_frame, "P01 (1%)", "q01", "#f87171", "P99 (99%)", "q99", "#4ade80")
         self.create_stat_row(stats_frame, "P05 (5%)", "q05", "#fb923c", "P95 (95%)", "q95", "#38bdf8")
         self.create_stat_row(stats_frame, "Q25 (Q1)", "q25", TEXT_MUTED, "Q75 (Q3)", "q75", TEXT_MUTED)
-        self.create_stat_row(stats_frame, "MÉDIANE", "median", ACCENT_CYAN, "STD (σ)", "std", ACCENT_PURPLE)
+        self.create_stat_row(stats_frame, "MEDIAN", "median", ACCENT_CYAN, "STD (σ)", "std", ACCENT_PURPLE)
 
         # =========================================================================
         # RIGHT PANEL: Top Header, Modern KPI Badges & Matplotlib Charts
         # =========================================================================
-        right_panel = tk.Frame(main_frame, bg=BG_MAIN)
-        right_panel.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+        right_panel = ctk.CTkFrame(main_frame, fg_color=BG_MAIN, corner_radius=0)
+        right_panel.pack(side="right", fill="both", expand=True)
 
         # Header Title Bar
-        header_frame = tk.Frame(right_panel, bg=BG_MAIN)
-        header_frame.pack(fill=tk.X, pady=(0, 6))
+        header_frame = ctk.CTkFrame(right_panel, fg_color=BG_MAIN, corner_radius=0)
+        header_frame.pack(fill="x", pady=(0, 6))
 
-        title_left = tk.Frame(header_frame, bg=BG_MAIN)
-        title_left.pack(side=tk.LEFT)
-        tk.Label(title_left, text="NEUROTRADE AI", font=(self.font_family, 13, "bold"), fg=TEXT_WHITE, bg=BG_MAIN).pack(side=tk.LEFT)
+        title_left = ctk.CTkFrame(header_frame, fg_color=BG_MAIN, corner_radius=0)
+        title_left.pack(side="left")
+        ctk.CTkLabel(
+            title_left,
+            text="NEUROTRADE AI",
+            font=(self.font_family, 15, "bold"),
+            text_color=TEXT_WHITE
+        ).pack(side="left")
 
         device_str, device_color = get_device_info()
-        device_badge = tk.Frame(title_left, bg=BG_CARD, highlightbackground=BORDER_CARD, highlightthickness=1, padx=8, pady=3)
-        device_badge.pack(side=tk.LEFT, padx=(12, 0))
-        tk.Label(device_badge, text=f"● {device_str}", font=(self.font_family, 8, "bold"), fg=device_color, bg=BG_CARD).pack()
+        device_badge = ctk.CTkFrame(
+            title_left,
+            fg_color=BG_CARD,
+            border_color=BORDER_CARD,
+            border_width=1,
+            corner_radius=6
+        )
+        device_badge.pack(side="left", padx=(12, 0))
+        ctk.CTkLabel(
+            device_badge,
+            text=f"● {device_str}",
+            font=(self.font_family, 9, "bold"),
+            text_color=device_color
+        ).pack(padx=8, pady=3)
 
-        header_right = tk.Frame(header_frame, bg=BG_MAIN)
-        header_right.pack(side=tk.RIGHT)
-        self.progress = ttk.Progressbar(header_right, mode='indeterminate', length=140)
+        header_right = ctk.CTkFrame(header_frame, fg_color=BG_MAIN, corner_radius=0)
+        header_right.pack(side="right")
+        self.progress = ctk.CTkProgressBar(
+            header_right,
+            mode="indeterminate",
+            width=140,
+            progress_color=ACCENT_BLUE,
+            fg_color=BG_CARD
+        )
 
         # KPI Metric Cards Bar (7 Cards)
-        metrics_bar = tk.Frame(right_panel, bg=BG_MAIN)
-        metrics_bar.pack(fill=tk.X, pady=(0, 8))
+        metrics_bar = ctk.CTkFrame(right_panel, fg_color=BG_MAIN, corner_radius=0)
+        metrics_bar.pack(fill="x", pady=(0, 8))
 
         kpis = [
             ("EPOCH", "N/A", TEXT_MUTED),
@@ -283,14 +316,32 @@ class App(tk.Tk):
 
         self.kpi_labels = {}
         for key, default_val, default_color in kpis:
-            card = tk.Frame(metrics_bar, bg=BG_CARD, highlightbackground=BORDER_CARD, highlightthickness=1, padx=8, pady=5)
-            card.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=2)
-            
-            lbl_title = tk.Label(card, text=key, font=(self.font_family, 7, "bold"), fg=TEXT_SUB, bg=BG_CARD)
-            lbl_title.pack(anchor=tk.W)
-            
-            lbl_val = tk.Label(card, text=default_val, font=(self.font_family, 11, "bold"), fg=default_color, bg=BG_CARD)
-            lbl_val.pack(anchor=tk.W, pady=(1, 0))
+            card = ctk.CTkFrame(
+                metrics_bar,
+                fg_color=BG_CARD,
+                border_color=BORDER_CARD,
+                border_width=1,
+                corner_radius=8
+            )
+            card.pack(side="left", fill="both", expand=True, padx=2)
+
+            lbl_title = ctk.CTkLabel(
+                card,
+                text=key,
+                font=(self.font_family, 8, "bold"),
+                text_color=TEXT_SUB,
+                anchor="w"
+            )
+            lbl_title.pack(anchor="w", padx=8, pady=(4, 0))
+
+            lbl_val = ctk.CTkLabel(
+                card,
+                text=default_val,
+                font=(self.font_family, 13, "bold"),
+                text_color=default_color,
+                anchor="w"
+            )
+            lbl_val.pack(anchor="w", padx=8, pady=(0, 4))
             self.kpi_labels[key] = lbl_val
 
         # Aliases for backward compatibility
@@ -303,8 +354,8 @@ class App(tk.Tk):
         self.max_dd_label = self.kpi_labels["MAX DRAWDOWN"]
 
         # Matplotlib Plot Canvas
-        plot_frame = tk.Frame(right_panel, bg=BG_MAIN)
-        plot_frame.pack(fill=tk.BOTH, expand=True)
+        plot_frame = ctk.CTkFrame(right_panel, fg_color=BG_MAIN, corner_radius=0)
+        plot_frame.pack(fill="both", expand=True)
 
         plt.style.use('dark_background')
         self.fig, (self.ax1, self.ax2, self.ax3) = plt.subplots(
@@ -321,28 +372,66 @@ class App(tk.Tk):
             ax.tick_params(colors=TEXT_MUTED, labelsize=8)
 
         self.canvas = FigureCanvasTkAgg(self.fig, master=plot_frame)
-        self.canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+        self.canvas.get_tk_widget().pack(side="top", fill="both", expand=True)
 
         # Queue checking and initial cached backtest load
         self._check_queue_id = self.after(100, self.check_queue)
         self._initial_load_id = self.after(600, self.initial_load_backtest)
 
     def create_card(self, parent):
-        return tk.Frame(parent, bg=BG_CARD, highlightbackground=BORDER_CARD, highlightthickness=1, padx=12, pady=10)
+        return ctk.CTkFrame(
+            parent,
+            fg_color=BG_CARD,
+            border_color=BORDER_CARD,
+            border_width=1,
+            corner_radius=8
+        )
 
     def create_two_inputs_row(self, parent, label1, var1, label2, var2):
-        row_frame = tk.Frame(parent, bg=BG_CARD)
-        row_frame.pack(fill=tk.X, pady=2)
+        row_frame = ctk.CTkFrame(parent, fg_color="transparent")
+        row_frame.pack(fill="x", pady=2)
 
-        col1 = tk.Frame(row_frame, bg=BG_CARD)
-        col1.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 3))
-        tk.Label(col1, text=label1, font=(self.font_family, 7, "bold"), fg=TEXT_MUTED, bg=BG_CARD).pack(anchor=tk.W)
-        ModernEntry(col1, textvariable=var1, font_family=self.font_family).pack(fill=tk.X, pady=(2, 0))
+        col1 = ctk.CTkFrame(row_frame, fg_color="transparent")
+        col1.pack(side="left", fill="x", expand=True, padx=(0, 3))
+        ctk.CTkLabel(
+            col1,
+            text=label1,
+            font=(self.font_family, 8, "bold"),
+            text_color=TEXT_MUTED,
+            anchor="w"
+        ).pack(fill="x")
+        ctk.CTkEntry(
+            col1,
+            textvariable=var1,
+            height=28,
+            corner_radius=6,
+            border_width=1,
+            fg_color=BG_INPUT,
+            border_color=BORDER_INPUT,
+            text_color=TEXT_WHITE,
+            font=(self.font_family, 10)
+        ).pack(fill="x", pady=(1, 0))
 
-        col2 = tk.Frame(row_frame, bg=BG_CARD)
-        col2.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(3, 0))
-        tk.Label(col2, text=label2, font=(self.font_family, 7, "bold"), fg=TEXT_MUTED, bg=BG_CARD).pack(anchor=tk.W)
-        ModernEntry(col2, textvariable=var2, font_family=self.font_family).pack(fill=tk.X, pady=(2, 0))
+        col2 = ctk.CTkFrame(row_frame, fg_color="transparent")
+        col2.pack(side="right", fill="x", expand=True, padx=(3, 0))
+        ctk.CTkLabel(
+            col2,
+            text=label2,
+            font=(self.font_family, 8, "bold"),
+            text_color=TEXT_MUTED,
+            anchor="w"
+        ).pack(fill="x")
+        ctk.CTkEntry(
+            col2,
+            textvariable=var2,
+            height=28,
+            corner_radius=6,
+            border_width=1,
+            fg_color=BG_INPUT,
+            border_color=BORDER_INPUT,
+            text_color=TEXT_WHITE,
+            font=(self.font_family, 10)
+        ).pack(fill="x", pady=(1, 0))
 
     def format_dist_axis(self):
         self.dist_ax.set_facecolor(BG_CARD)
@@ -355,44 +444,58 @@ class App(tk.Tk):
         self.dist_ax.set_yticks([])
 
     def create_stat_row(self, parent, label1, key1, color1, label2, key2, color2):
-        row = tk.Frame(parent, bg=BG_CARD)
-        row.pack(fill=tk.X, pady=1)
+        row = ctk.CTkFrame(parent, fg_color="transparent")
+        row.pack(fill="x", pady=1)
 
-        c1 = tk.Frame(row, bg=BG_INPUT, highlightbackground=BORDER_CARD, highlightthickness=1, padx=5, pady=2)
-        c1.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 2))
-        tk.Label(c1, text=label1, font=(self.font_family, 7), fg=TEXT_MUTED, bg=BG_INPUT).pack(side=tk.LEFT)
-        val1 = tk.Label(c1, text="-", font=(self.font_family, 8, "bold"), fg=color1, bg=BG_INPUT)
-        val1.pack(side=tk.RIGHT)
+        c1 = ctk.CTkFrame(row, fg_color=BG_INPUT, border_color=BORDER_CARD, border_width=1, corner_radius=4)
+        c1.pack(side="left", fill="x", expand=True, padx=(0, 2))
+        ctk.CTkLabel(c1, text=label1, font=(self.font_family, 8), text_color=TEXT_MUTED).pack(side="left", padx=5, pady=2)
+        val1 = ctk.CTkLabel(c1, text="-", font=(self.font_family, 9, "bold"), text_color=color1)
+        val1.pack(side="right", padx=5, pady=2)
         self.stat_labels[key1] = val1
 
-        c2 = tk.Frame(row, bg=BG_INPUT, highlightbackground=BORDER_CARD, highlightthickness=1, padx=5, pady=2)
-        c2.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(2, 0))
-        tk.Label(c2, text=label2, font=(self.font_family, 7), fg=TEXT_MUTED, bg=BG_INPUT).pack(side=tk.LEFT)
-        val2 = tk.Label(c2, text="-", font=(self.font_family, 8, "bold"), fg=color2, bg=BG_INPUT)
-        val2.pack(side=tk.RIGHT)
+        c2 = ctk.CTkFrame(row, fg_color=BG_INPUT, border_color=BORDER_CARD, border_width=1, corner_radius=4)
+        c2.pack(side="right", fill="x", expand=True, padx=(2, 0))
+        ctk.CTkLabel(c2, text=label2, font=(self.font_family, 8), text_color=TEXT_MUTED).pack(side="left", padx=5, pady=2)
+        val2 = ctk.CTkLabel(c2, text="-", font=(self.font_family, 9, "bold"), text_color=color2)
+        val2.pack(side="right", padx=5, pady=2)
         self.stat_labels[key2] = val2
 
     def create_single_input_row(self, parent, label_text, var):
-        frame = tk.Frame(parent, bg=BG_CARD)
-        frame.pack(fill=tk.X, pady=2)
-        tk.Label(frame, text=label_text, font=(self.font_family, 7, "bold"), fg=TEXT_MUTED, bg=BG_CARD).pack(anchor=tk.W)
-        ModernEntry(frame, textvariable=var, font_family=self.font_family).pack(fill=tk.X, pady=(2, 0))
+        frame = ctk.CTkFrame(parent, fg_color="transparent")
+        frame.pack(fill="x", pady=2)
+        ctk.CTkLabel(
+            frame,
+            text=label_text,
+            font=(self.font_family, 8, "bold"),
+            text_color=TEXT_MUTED,
+            anchor="w"
+        ).pack(fill="x")
+        ctk.CTkEntry(
+            frame,
+            textvariable=var,
+            height=28,
+            corner_radius=6,
+            border_width=1,
+            fg_color=BG_INPUT,
+            border_color=BORDER_INPUT,
+            text_color=TEXT_WHITE,
+            font=(self.font_family, 10)
+        ).pack(fill="x", pady=(1, 0))
 
     def create_preset_btn(self, parent, text, in_val, out_val):
-        return tk.Button(
+        return ctk.CTkButton(
             parent,
             text=text,
-            bg=BG_INPUT,
-            fg=TEXT_WHITE,
-            activebackground=BORDER_CARD,
-            activeforeground="#ffffff",
-            relief="flat",
-            bd=0,
-            highlightbackground=BORDER_INPUT,
-            highlightthickness=1,
-            font=(self.font_family, 8),
+            fg_color=BG_INPUT,
+            hover_color=BORDER_CARD,
+            border_width=1,
+            border_color=BORDER_INPUT,
+            text_color=TEXT_WHITE,
+            corner_radius=5,
+            height=24,
+            font=(self.font_family, 9),
             cursor="hand2",
-            pady=3,
             command=lambda: self.set_thresholds(in_val, out_val)
         )
 
@@ -403,10 +506,10 @@ class App(tk.Tk):
 
     def run_training(self):
         """Runs model training in a background daemon thread."""
-        self.train_button.config(state="disabled", bg="#1e293b", cursor="arrow")
-        self.recalc_button.config(state="disabled", bg="#1e293b", cursor="arrow")
-        self.progress.pack(side=tk.RIGHT, padx=10)
-        self.progress.start(10)
+        self.train_button.configure(state="disabled", fg_color="#1e293b")
+        self.recalc_button.configure(state="disabled", fg_color="#1e293b")
+        self.progress.pack(side="right", padx=10)
+        self.progress.start()
         print("Starting training process...")
 
         try:
@@ -436,8 +539,8 @@ class App(tk.Tk):
             print("Invalid input parameters. Please check values.")
             self.progress.stop()
             self.progress.pack_forget()
-            self.train_button.config(state="normal", bg=ACCENT_BLUE, cursor="hand2")
-            self.recalc_button.config(state="normal", bg=ACCENT_PURPLE, cursor="hand2")
+            self.train_button.configure(state="normal", fg_color=ACCENT_BLUE)
+            self.recalc_button.configure(state="normal", fg_color=ACCENT_PURPLE)
             return
 
         for ax in [self.ax1, self.ax2, self.ax3]:
@@ -448,7 +551,7 @@ class App(tk.Tk):
                 spine.set_color(BORDER_CARD)
             ax.tick_params(colors=TEXT_MUTED, labelsize=8)
 
-        self.kpi_labels["EPOCH"].config(text="0")
+        self.kpi_labels["EPOCH"].configure(text="0")
         self.canvas.draw()
 
         thread = threading.Thread(target=train_model_with_callback, args=(ui_queue, params))
@@ -497,32 +600,32 @@ class App(tk.Tk):
         winrate = results.get('win_rate', 0.0)
 
         # Update modern KPI badges
-        self.kpi_labels["STRATEGY RETURN"].config(
-            text=f"{returns:+.2f}%", 
-            fg=ACCENT_GREEN if returns >= 0 else ACCENT_ROSE
+        self.kpi_labels["STRATEGY RETURN"].configure(
+            text=f"{returns:+.2f}%",
+            text_color=ACCENT_GREEN if returns >= 0 else ACCENT_ROSE
         )
-        self.kpi_labels["BUY & HOLD BTC"].config(
+        self.kpi_labels["BUY & HOLD BTC"].configure(
             text=f"{bh_return:+.2f}%",
-            fg=ACCENT_AMBER if bh_return >= 0 else ACCENT_ROSE
+            text_color=ACCENT_AMBER if bh_return >= 0 else ACCENT_ROSE
         )
-        self.kpi_labels["SHARPE RATIO"].config(
+        self.kpi_labels["SHARPE RATIO"].configure(
             text=f"{sharpe:.2f}",
-            fg=ACCENT_GREEN if sharpe >= 1.0 else (ACCENT_PURPLE if sharpe >= 0.0 else ACCENT_ROSE)
+            text_color=ACCENT_GREEN if sharpe >= 1.0 else (ACCENT_PURPLE if sharpe >= 0.0 else ACCENT_ROSE)
         )
-        self.kpi_labels["WIN RATE"].config(
+        self.kpi_labels["WIN RATE"].configure(
             text=f"{winrate:.1f}%",
-            fg=ACCENT_CYAN
+            text_color=ACCENT_CYAN
         )
-        self.kpi_labels["TOTAL TRADES"].config(
+        self.kpi_labels["TOTAL TRADES"].configure(
             text=f"{total_trades}",
-            fg=BORDER_FOCUS
+            text_color=BORDER_FOCUS
         )
-        self.kpi_labels["MAX DRAWDOWN"].config(
+        self.kpi_labels["MAX DRAWDOWN"].configure(
             text=f"{max_dd:.2f}%",
-            fg=ACCENT_ROSE if max_dd < 0 else TEXT_MUTED
+            text_color=ACCENT_ROSE if max_dd < 0 else TEXT_MUTED
         )
         if 'epoch' in results:
-            self.kpi_labels["EPOCH"].config(text=f"{results['epoch']}", fg=TEXT_WHITE)
+            self.kpi_labels["EPOCH"].configure(text=f"{results['epoch']}", text_color=TEXT_WHITE)
 
     def update_distribution_stats(self, results):
         """Updates the mini distribution histogram and quantiles table in Card 3."""
@@ -556,7 +659,7 @@ class App(tk.Tk):
         # Update numerical labels
         for k, lbl in self.stat_labels.items():
             if k in stats:
-                lbl.config(text=f"{stats[k]:.4f}")
+                lbl.configure(text=f"{stats[k]:.4f}")
 
         # Update mini distribution plot
         self.dist_ax.clear()
@@ -616,16 +719,16 @@ class App(tk.Tk):
                         self.update_backtest_ui(results)
                     epoch = message.get('epoch')
                     if epoch is not None:
-                        self.kpi_labels["EPOCH"].config(text=f"{epoch}", fg=TEXT_WHITE)
+                        self.kpi_labels["EPOCH"].configure(text=f"{epoch}", text_color=TEXT_WHITE)
 
                 elif msg_type == 'train_update':
                     epoch = message.get('epoch', 0) + 1
-                    self.kpi_labels["EPOCH"].config(text=f"{epoch}", fg=TEXT_WHITE)
+                    self.kpi_labels["EPOCH"].configure(text=f"{epoch}", text_color=TEXT_WHITE)
 
                 elif msg_type == 'train_finished':
                     print("Training process finished.")
-                    self.train_button.config(state="normal", bg=ACCENT_BLUE, cursor="hand2")
-                    self.recalc_button.config(state="normal", bg=ACCENT_PURPLE, cursor="hand2")
+                    self.train_button.configure(state="normal", fg_color=ACCENT_BLUE)
+                    self.recalc_button.configure(state="normal", fg_color=ACCENT_PURPLE)
                     self.progress.stop()
                     self.progress.pack_forget()
 
@@ -651,7 +754,7 @@ class App(tk.Tk):
         except Exception:
             pass
         self.destroy()
-        os._exit(0)
+        sys.exit(0)
 
 if __name__ == "__main__":
     app = App()
