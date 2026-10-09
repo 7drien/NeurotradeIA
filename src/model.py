@@ -23,10 +23,10 @@ try:
 except Exception:
     pass
 
-from tensorflow.keras.models import Sequential
+from tensorflow.keras.models import Sequential, Model
 from tensorflow.keras.layers import Dense, LeakyReLU, Input
 from tensorflow.keras.optimizers import Adam
-from src.config import LEARNING_RATE
+from src.config import LEARNING_RATE, DEFAULT_N_MODELS
 
 @tf.keras.utils.register_keras_serializable(name="two_sigmoid")
 def two_sigmoid(x):
@@ -53,43 +53,65 @@ def opportunity_cost_loss(y_true, y_pred):
     """Legacy loss preserved for backward compatibility."""
     return tf.keras.losses.categorical_crossentropy(y_true, y_pred)
 
-def create_dense_model(input_dim=2048, lr=LEARNING_RATE):
+def create_dense_model(input_dim=2048, lr=LEARNING_RATE, n_models=DEFAULT_N_MODELS):
     """
-    Creates a Deep Neural Network for predicting 32-candle ahead price ratios.
+    Creates a Deep Neural Network (or N-Model Ensemble) for predicting 32-candle ahead price ratios.
     
-    Architecture:
-    - Input: Vector of 2048 values (256 candles * 8 features)
-    - Hidden Layer 1: Dense(1024) + LeakyReLU
-    - Hidden Layer 2: Dense(512) + LeakyReLU
-    - Hidden Layer 3: Dense(256) + LeakyReLU
-    - Hidden Layer 4: Dense(64) + LeakyReLU
-    - Hidden Layer 5: Dense(16) + LeakyReLU
-    - Hidden Layer 6: Dense(8) + LeakyReLU
-    - Output Layer: Dense(1) + 2*sigmoid activation
+    If n_models == 1:
+        Creates a single 6-layer MLP Sequential model with 2*sigmoid output.
+    If n_models > 1:
+        Creates an Ensemble Model with N independent parallel MLP branches,
+        each with its own independent random weights, learning diverse trading signals.
     """
-    model = Sequential([
-        Input(shape=(input_dim,)),
-        Dense(1024),
-        LeakyReLU(negative_slope=0.01),
-        Dense(512),
-        LeakyReLU(negative_slope=0.01),
-        Dense(256),
-        LeakyReLU(negative_slope=0.01),
-        Dense(64),
-        LeakyReLU(negative_slope=0.01),
-        Dense(16),
-        LeakyReLU(negative_slope=0.01),
-        Dense(8),
-        LeakyReLU(negative_slope=0.01),
-        Dense(1, activation=two_sigmoid)
-    ])
+    if n_models <= 1:
+        model = Sequential([
+            Input(shape=(input_dim,)),
+            Dense(1024),
+            LeakyReLU(negative_slope=0.01),
+            Dense(512),
+            LeakyReLU(negative_slope=0.01),
+            Dense(256),
+            LeakyReLU(negative_slope=0.01),
+            Dense(64),
+            LeakyReLU(negative_slope=0.01),
+            Dense(16),
+            LeakyReLU(negative_slope=0.01),
+            Dense(8),
+            LeakyReLU(negative_slope=0.01),
+            Dense(1, activation=two_sigmoid)
+        ])
+        model.compile(
+            optimizer=Adam(learning_rate=lr, clipnorm=1.0),
+            loss='mse',
+            metrics=['mae', directional_accuracy]
+        )
+        return model
+    else:
+        inp = Input(shape=(input_dim,))
+        outputs = []
+        for i in range(n_models):
+            x = Dense(1024, name=f"dense_1024_m{i}")(inp)
+            x = LeakyReLU(negative_slope=0.01, name=f"lrelu_1_m{i}")(x)
+            x = Dense(512, name=f"dense_512_m{i}")(x)
+            x = LeakyReLU(negative_slope=0.01, name=f"lrelu_2_m{i}")(x)
+            x = Dense(256, name=f"dense_256_m{i}")(x)
+            x = LeakyReLU(negative_slope=0.01, name=f"lrelu_3_m{i}")(x)
+            x = Dense(64, name=f"dense_64_m{i}")(x)
+            x = LeakyReLU(negative_slope=0.01, name=f"lrelu_4_m{i}")(x)
+            x = Dense(16, name=f"dense_16_m{i}")(x)
+            x = LeakyReLU(negative_slope=0.01, name=f"lrelu_5_m{i}")(x)
+            x = Dense(8, name=f"dense_8_m{i}")(x)
+            x = LeakyReLU(negative_slope=0.01, name=f"lrelu_6_m{i}")(x)
+            out = Dense(1, activation=two_sigmoid, name=f"out_m{i}")(x)
+            outputs.append(out)
 
-    model.compile(
-        optimizer=Adam(learning_rate=lr, clipnorm=1.0),
-        loss='mse',
-        metrics=['mae', directional_accuracy]
-    )
-    return model
+        model = Model(inputs=inp, outputs=outputs, name=f"ensemble_{n_models}_mlp")
+        model.compile(
+            optimizer=Adam(learning_rate=lr, clipnorm=1.0),
+            loss=['mse'] * n_models,
+            metrics=[['mae', directional_accuracy]] * n_models
+        )
+        return model
 
 # Alias for backward compatibility
 create_lstm_model = create_dense_model
